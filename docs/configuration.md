@@ -44,10 +44,15 @@ so shell commands keep the user's normal umask.
 ## Project-local policy
 
 `.pi` project settings and resources are ignored. Rocky also disables automatic discovery from
-`~/.agents/skills`, ancestor `.agents/skills`, and hierarchy `AGENTS.md`/`AGENTS.override.md`/`CLAUDE.md`. Skills are
-automatically loaded only from `~/.rocky/agent/skills` and trusted `<cwd>/.rocky/skills`; an explicit `--skill`
-path remains available as a deliberate opt-in. Use Rocky `SYSTEM.md` or `APPEND_SYSTEM.md` files instead of generic
-context files.
+`~/.agents/skills` and ancestor `.agents/skills`. Skills are automatically loaded only from
+`~/.rocky/agent/skills` and trusted `<cwd>/.rocky/skills`; an explicit `--skill` path remains available as a
+deliberate opt-in.
+
+Hierarchy context files (`AGENTS.override.md`/`AGENTS.md`/`CLAUDE.md`) follow standard Pi discovery: the global
+agent directory, then the working directory and its ancestors, first match per directory. They load regardless of
+project trust — Pi provides no trust gate for them (ADR 0002) — and `--no-context-files` disables them for an
+invocation. Rocky `SYSTEM.md`/`APPEND_SYSTEM.md` still control the system prompt; context files add repository
+instructions alongside them.
 
 `.rocky` resources are loaded only after project trust is resolved. The repository's `.rocky/.gitignore` tracks
 reviewed behavior and denies runtime state by default; a project cannot store its own trust approval.

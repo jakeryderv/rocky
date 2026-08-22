@@ -35,7 +35,7 @@ writeFileSync(
   "---\nname: project-shared-poison\ndescription: Must not load\n---\n",
   "utf8",
 );
-writeFileSync(join(project, "AGENTS.md"), "SHARED_CONTEXT_POISON\n", "utf8");
+writeFileSync(join(project, "AGENTS.md"), "Smoke project context file\n", "utf8");
 
 const env = credentialFreeEnvironment({
   HOME: home,
@@ -92,7 +92,10 @@ try {
     if (!tuiOutput.includes("rocky-smoke")) {
       throw new Error(`TUI did not discover the Rocky-owned skill\n${tuiOutput}`);
     }
-    for (const poison of ["global-shared-poison", "project-shared-poison", "AGENTS.md"]) {
+    if (!tuiOutput.includes("AGENTS.md")) {
+      throw new Error(`TUI did not discover the project context file\n${tuiOutput}`);
+    }
+    for (const poison of ["global-shared-poison", "project-shared-poison"]) {
       if (tuiOutput.includes(poison)) {
         throw new Error(`TUI auto-discovered cross-harness resource ${poison}\n${tuiOutput}`);
       }

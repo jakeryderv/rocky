@@ -111,15 +111,44 @@ describe("Rocky Pi composition boundary", () => {
     expect(pi.getAgentDir()).toBe(agentDir);
   });
 
-  it("disables cross-harness skill and context discovery by default", () => {
+  it("disables cross-harness skill discovery but keeps standard context-file discovery", () => {
     const policyProject = join(fixtureRoot, "policy-project");
     mkdirSync(join(policyProject, ".agents", "skills", "shared-poison"), { recursive: true });
 
     const isolatedArgs = applyRockyDiscoveryPolicy(["--offline"]);
-    expect(isolatedArgs).toEqual(expect.arrayContaining(["--no-skills", "--no-context-files"]));
+    expect(isolatedArgs).toContain("--no-skills");
+    expect(isolatedArgs).not.toContain("--no-context-files");
     expect(isolatedArgs).not.toContain("--no-approve");
     expect(applyRockyDiscoveryPolicy(["--offline", "--approve"])).toContain("--approve");
     expect(applyRockyDiscoveryPolicy(["config"])).toEqual(["config"]);
+    // A user opt-out passes through unduplicated.
+    expect(
+      applyRockyDiscoveryPolicy(["--offline", "--no-context-files"]).filter(
+        (argument) => argument === "--no-context-files",
+      ),
+    ).toEqual(["--no-context-files"]);
+  });
+
+  it("discovers hierarchy context files regardless of project trust", async () => {
+    const contextRoot = join(fixtureRoot, "context-project");
+    const nestedCwd = join(contextRoot, "nested");
+    write(join(contextRoot, "AGENTS.md"), "ancestor context\n");
+    write(join(nestedCwd, "CLAUDE.md"), "project context\n");
+
+    const contextFiles = pi.loadProjectContextFiles({ cwd: nestedCwd, agentDir });
+    expect(contextFiles.map(({ path }) => path)).toEqual([
+      join(contextRoot, "AGENTS.md"),
+      join(nestedCwd, "CLAUDE.md"),
+    ]);
+
+    // Pi has no trust gate for context files; Rocky accepts that (ADR 0002).
+    const settings = pi.SettingsManager.create(nestedCwd, agentDir, { projectTrusted: false });
+    const loader = new pi.DefaultResourceLoader({ cwd: nestedCwd, agentDir, settingsManager: settings });
+    await loader.reload();
+    expect(loader.getAgentsFiles().agentsFiles.map(({ path }) => path)).toEqual([
+      join(contextRoot, "AGENTS.md"),
+      join(nestedCwd, "CLAUDE.md"),
+    ]);
   });
 
   it("selects skill roots only from Rocky-owned directories", () => {

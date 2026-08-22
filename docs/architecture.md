@@ -41,10 +41,11 @@ not isolate code, shell commands, or model requests.
 
 ## Known inherited behavior
 
-Rocky starts agent sessions with Pi's general skill and context-file discovery disabled. A hidden Rocky extension
-adds back only `~/.rocky/agent/skills` and trusted `<cwd>/.rocky/skills`; shared `~/.agents/skills`, ancestor
-`.agents/skills`, and hierarchy `AGENTS.md`/`AGENTS.override.md`/`CLAUDE.md` are not loaded. Explicit `--skill` paths
-remain an intentional user opt-in.
+Rocky starts agent sessions with Pi's general skill discovery disabled. A hidden Rocky extension adds back only
+`~/.rocky/agent/skills` and trusted `<cwd>/.rocky/skills`; shared `~/.agents/skills` and ancestor `.agents/skills`
+are not loaded. Explicit `--skill` paths remain an intentional user opt-in. Hierarchy context files
+(`AGENTS.md`/`AGENTS.override.md`/`CLAUDE.md`) use stock Pi discovery, which has no project-trust gate; Rocky
+accepts this deliberately (see ADR 0002) and `--no-context-files` remains a per-invocation opt-out.
 
 Temporary editor, clipboard, bash, and truncated-output files use the OS temporary directory. Some process/session
 controls remain `PI_*`, extension virtual imports remain `@earendil-works/pi-*`, and parts of the default prompt/UI

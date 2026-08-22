@@ -173,8 +173,10 @@ function getRockyProjectTrustDecision(cwd: string): "no" | "undecided" {
 }
 
 /**
- * Disable Pi's cross-harness skill/context discovery for agent sessions. Rocky
- * skills are added back by rockySkillDiscoveryExtension after project trust.
+ * Disable Pi's cross-harness skill discovery for agent sessions. Rocky skills
+ * are added back by rockySkillDiscoveryExtension after project trust. Hierarchy
+ * context files (AGENTS.md/CLAUDE.md) stay on standard Pi discovery, which is
+ * not gated by project trust (ADR 0002); --no-context-files remains a user opt-out.
  */
 export function applyRockyDiscoveryPolicy(args: readonly string[]): string[] {
   if (!requiresCodingRuntime(args)) {
@@ -184,9 +186,6 @@ export function applyRockyDiscoveryPolicy(args: readonly string[]): string[] {
   const isolatedArgs = [...args];
   if (!isolatedArgs.some((argument) => argument === "--no-skills" || argument === "-ns")) {
     isolatedArgs.push("--no-skills");
-  }
-  if (!isolatedArgs.some((argument) => argument === "--no-context-files" || argument === "-nc")) {
-    isolatedArgs.push("--no-context-files");
   }
 
   return isolatedArgs;

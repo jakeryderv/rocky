@@ -37,9 +37,10 @@ environment variable. Never put credentials in project-local `<cwd>/.rocky/`.
 | Project settings/resources | `<cwd>/.rocky/` |
 
 Rocky does not discover `<cwd>/.pi` settings, extensions, skills, prompts, themes, `SYSTEM.md`, or
-`APPEND_SYSTEM.md`. It also disables shared `~/.agents/skills`, ancestor `.agents/skills`, and hierarchy
-`AGENTS.md`/`CLAUDE.md` discovery. Automatic skills come only from Rocky's global and trusted project `skills/`
-directories. Project resources remain subject to Pi's project-trust flow.
+`APPEND_SYSTEM.md`. It also disables shared `~/.agents/skills` and ancestor `.agents/skills` discovery; automatic
+skills come only from Rocky's global and trusted project `skills/` directories. Hierarchy context files
+(`AGENTS.md`/`AGENTS.override.md`/`CLAUDE.md`) follow standard Pi discovery and load regardless of project trust
+(`--no-context-files` opts out). Project resources remain subject to Pi's project-trust flow.
 See [`docs/configuration.md`](docs/configuration.md) for exact paths and compatibility environment variables.
 
 ## Development
