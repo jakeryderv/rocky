@@ -1,14 +1,26 @@
-# project idea outline
+# Rocky research and evolution outline
 
-agent/agent-harness built on `@earendil-works/pi-ai` (use other stuff from `pi` libs selectively)
+Rocky is an agent/agent harness built on Pi packages, initially using
+`@earendil-works/pi-coding-agent` as the stock runtime boundary rather than selecting lower-level pieces prematurely.
 
----
+## Staged experimental idea
 
-**potential idea:** when working on this repo, once the swe lifecycle is defined and workflow is defined/setup, and we have minimal setup for this custom agent, there is potential to log make analyze performance of the custom agent's specific settings/features. like we can use pi or whatever to spin up multiple subagents of this custom `rocky` agent, each given same prompt with isolated workspace to implement. we then track and log the different implementations and outputs to analyze continuously to iterate and improve existing, or add new based on gaps found. explore the following methods/approaches:
-- *combinatorial interaction testing*
-- *feature interaction testing*
-- *factorial design*
-- *ablation study*
+Once the software-engineering lifecycle, stable Rocky behavior, and measurable success criteria exist, Rocky could
+run multiple isolated Rocky subagents on the same task and retain structured implementation/outcome data. That can
+support continuous comparison of settings and features using:
 
-**potential idea:** maybe keep think like `pi`, but add subharnesses with differences that are optimized for what task/workflow the subagent is doing.
+- combinatorial interaction testing;
+- feature interaction testing;
+- factorial design; and
+- ablation studies.
 
+Experiments must use isolated workspaces, pinned prompts/runtime versions, declared factors, repeatable scoring, and
+explicit data-retention/security rules. They must not become credentialed or nondeterministic required CI checks.
+Start with small controlled studies only after baseline behavior is stable; otherwise measurements would confound
+harness churn with the feature being evaluated.
+
+## Specialized subharness idea
+
+Keep the simple Pi-like core, then consider task/workflow-specific subharnesses only when measurements show a real
+need. Prefer composable extensions or supported runtime composition over divergent TUI/runtime forks. Any durable
+subharness contract, evaluation data format, or trust-boundary change requires an ADR.

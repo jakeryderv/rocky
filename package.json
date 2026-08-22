@@ -1,0 +1,71 @@
+{
+  "name": "@jakeryderv/rocky",
+  "version": "0.1.0",
+  "description": "A focused coding-agent distribution built on Pi",
+  "private": true,
+  "type": "module",
+  "bin": {
+    "rocky": "dist/cli.js"
+  },
+  "piConfig": {
+    "name": "rocky",
+    "configDir": ".rocky"
+  },
+  "files": [
+    "dist",
+    "pi-package",
+    "npm-shrinkwrap.json",
+    "docs",
+    "examples",
+    "README.md",
+    "CHANGELOG.md",
+    "LICENSE",
+    "THIRD_PARTY_NOTICES.md"
+  ],
+  "scripts": {
+    "dev": "npm run build && node --enable-source-maps dist/cli.js",
+    "clean": "node scripts/clean.mjs",
+    "build": "npm run clean && tsc -p tsconfig.build.json && node scripts/copy-pi-assets.mjs",
+    "start": "node --enable-source-maps dist/cli.js",
+    "format": "biome format --write .",
+    "format:check": "biome format .",
+    "lint": "biome lint .",
+    "check": "biome check .",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage",
+    "smoke": "npm run build && npm run smoke:built",
+    "smoke:built": "node scripts/smoke.mjs",
+    "pack:check": "node scripts/check-pack.mjs",
+    "verify": "npm run check && npm run typecheck && npm run test:coverage && npm run build && npm run smoke:built && npm run pack:check",
+    "security:audit": "npm audit --omit=dev --audit-level=high"
+  },
+  "dependencies": {
+    "@earendil-works/pi-coding-agent": "0.84.2"
+  },
+  "overrides": {
+    "@earendil-works/pi-agent-core": "0.84.2",
+    "@earendil-works/pi-ai": "0.84.2",
+    "@earendil-works/pi-client": "0.84.2",
+    "@earendil-works/pi-protocol": "0.84.2",
+    "@earendil-works/pi-telemetry": "0.84.2",
+    "@earendil-works/pi-tui": "0.84.2"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "2.5.10",
+    "@types/node": "24.12.4",
+    "@vitest/coverage-v8": "4.1.11",
+    "tsx": "4.23.12",
+    "typescript": "5.9.3",
+    "vitest": "4.1.11"
+  },
+  "engines": {
+    "node": ">=22.19.0"
+  },
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/jakeryderv/rocky.git"
+  }
+}

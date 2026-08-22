@@ -1,2 +1,16 @@
 .env
 .envrc
+node_modules/
+dist/
+coverage/
+reports/
+*.tgz
+
+# Generated mirrors of static assets from the exactly pinned Pi dependency.
+pi-package/dist/
+pi-package/docs/
+pi-package/examples/
+pi-package/README.md
+pi-package/CHANGELOG.md
+pi-package/asset-manifest.json
+pi-package/.pi-version

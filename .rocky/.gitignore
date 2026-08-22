@@ -1,0 +1,15 @@
+*
+
+!.gitignore
+!README.md
+!settings.json
+!SYSTEM.md
+!APPEND_SYSTEM.md
+!extensions/
+!extensions/**
+!skills/
+!skills/**
+!prompts/
+!prompts/**
+!themes/
+!themes/**
