@@ -10,5 +10,5 @@ agent/agent-harness built on `@earendil-works/pi-ai` (use other stuff from `pi` 
 - *factorial design*
 - *ablation study*
 
-
+**potential idea:** maybe keep think like `pi`, but add subharnesses with differences that are optimized for what task/workflow the subagent is doing.
 
