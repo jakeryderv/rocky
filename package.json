@@ -26,7 +26,7 @@
   "scripts": {
     "dev": "npm run build && node --enable-source-maps dist/cli.js",
     "clean": "node scripts/clean.mjs",
-    "build": "npm run clean && npm run build --workspace @jakeryderv/rocky-harness && tsc -p tsconfig.build.json",
+    "build": "npm run clean && npm run build --workspace @jakeryderv/rocky-harness && tsc -p tsconfig.build.json && node -e \"require('node:fs').chmodSync('dist/cli.js', 0o755)\"",
     "start": "node --enable-source-maps dist/cli.js",
     "format": "biome format --write .",
     "format:check": "biome format .",
