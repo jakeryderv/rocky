@@ -1,14 +1,16 @@
 # Rocky
 
-Rocky is an early-stage, focused coding-agent distribution built on
-[`@earendil-works/pi-coding-agent`](https://www.npmjs.com/package/@earendil-works/pi-coding-agent).
-It keeps Pi's official `InteractiveMode` and `pi-tui` experience while giving configuration and project
-resources a Rocky-owned namespace.
+Rocky is an early-stage coding-agent platform. Its harness lives in
+[`packages/harness`](packages/harness), a source fork of
+[`@earendil-works/pi-coding-agent`](https://github.com/earendil-works/pi) v0.84.2 rebranded and adapted for
+Rocky (see [ADR 0003](docs/decisions/0003-bun-platform-and-harness-fork.md)); the provider/model layer stays
+on exactly pinned upstream Pi packages (`pi-ai`, `pi-agent-core`, …).
 
 ## Status
 
-The scaffold provides the stock Pi CLI/TUI under the `rocky` executable, Rocky path isolation, tests, and a
-repeatable development gate. Rocky-specific agent behavior and the experiments in
+The `rocky` executable runs the forked harness with its inherited `InteractiveMode`/`pi-tui` TUI, Rocky path
+isolation, the fork's full regression suite, and a repeatable development gate. Next: a Rocky-owned contract
+and an OpenTUI + Solid client on Bun; the experiments in
 [`docs/project-idea-outline.md`](docs/project-idea-outline.md) remain future work.
 
 ## Requirements and setup
@@ -53,20 +55,17 @@ npm run security:audit  # separate, network-dependent advisory check
 See [`docs/development.md`](docs/development.md), [`docs/architecture.md`](docs/architecture.md), and
 [`SECURITY.md`](SECURITY.md).
 
-The npm package remains `private` while Rocky is pre-release and has no publication target. `npm run pack:check`
-still validates the complete installable artifact.
+The npm packages remain `private` while Rocky is pre-release and has no publication target.
 
 ## Current limitations
 
-- Rocky uses a narrow `PI_PACKAGE_DIR` composition bridge because Pi does not expose `configDirName` as an SDK
-  option. The bridge points Pi at Rocky-owned metadata and copied package assets; it never patches `node_modules`.
-- Pi still uses some `PI_*` compatibility variables, `pi.dev` model infrastructure, extension virtual imports,
-  and hardcoded Pi wording in the default system prompt and a few messages.
-- Rocky self-update is disabled until Rocky owns an update feed. Package and model update commands remain
-  available.
-- Rocky requires system-managed `fd`/`rg` and refuses executables under `~/.rocky/agent/bin`; this prevents Pi's
-  unpinned managed-tool downloader from running.
-- Pi extensions and packages execute with the Rocky process's full permissions; project trust is not a sandbox.
+- The harness fork retains some `PI_*` compatibility variables (`PI_OFFLINE`, `PI_TELEMETRY`,
+  `PI_SESSION_*`, …), `pi.dev` model-catalog infrastructure, and the upstream extension virtual-import
+  specifiers (`@earendil-works/pi-coding-agent` works alongside `@jakeryderv/rocky-harness`).
+- Rocky has no self-update; update Rocky with the package manager that installed it. `rocky update
+  --extensions` and `--models` remain available.
+- Rocky requires system-installed `fd`/`rg`; the harness never downloads executables.
+- Extensions and packages execute with the Rocky process's full permissions; project trust is not a sandbox.
 
 ## License
 

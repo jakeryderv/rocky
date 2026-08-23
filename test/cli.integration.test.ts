@@ -52,7 +52,7 @@ describe("rocky CLI", () => {
     expect(result.stdout).toContain("~/.rocky/agent");
     expect(result.stdout).toContain("ROCKY_CODING_AGENT_DIR");
     expect(result.stdout).toContain("ROCKY_CODING_AGENT_SESSION_DIR");
-    expect(result.stdout).toContain("Reserved internally by Rocky");
+    expect(result.stdout).not.toContain("PI_PACKAGE_DIR");
     expect(result.stdout).not.toContain("update [source|self|pi]");
     expect(result.stdout).not.toContain("~/.pi/agent");
     expect(existsSync(join(fixtureRoot, "pi-poison"))).toBe(true);
@@ -66,27 +66,14 @@ describe("rocky CLI", () => {
     expect(result.stdout.trim()).toBe("0.1.0");
   });
 
-  it("refuses Rocky-managed search executables instead of allowing Pi downloads", () => {
-    if (process.platform === "win32") return;
-    const managedBin = join(fixtureRoot, "agent", "bin");
-    mkdirSync(managedBin, { recursive: true });
-    writeFileSync(join(managedBin, "rg"), "untrusted managed tool\n", "utf8");
-
-    const result = runRocky(["--offline"]);
-    expect(result.status).toBe(1);
-    expect(result.stderr).toContain("Refusing unmanaged executable");
-  });
-
-  it("rejects stock self-update instead of migrating to Pi", () => {
-    const result = runRocky(["update"]);
-
-    expect(result.status).toBe(1);
-    expect(result.stderr).toContain("Rocky self-update is not available yet");
+  it("offers no self-update surface", () => {
+    const targeted = runRocky(["update", "self"]);
+    expect(`${targeted.stdout}${targeted.stderr}`).not.toContain("Update Available");
 
     const help = runRocky(["update", "--help"]);
     expect(help.status).toBe(0);
-    expect(help.stdout).toContain("Unsupported by Rocky");
     expect(help.stdout).not.toContain("Update pi only");
     expect(help.stdout).not.toContain("source|self|pi");
+    expect(help.stdout).not.toContain("--self");
   });
 });

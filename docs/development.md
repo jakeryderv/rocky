@@ -20,15 +20,15 @@ consumer installation checks must continue to prove every runtime `@earendil-wor
 | `npm run lint` / `check` | Biome lint or combined static check |
 | `npm run typecheck` | Strict TypeScript without emit |
 | `npm test` / `test:coverage` | Credential-free Vitest suite |
-| `npm run build` | Compile and copy pinned Pi package assets |
+| `npm run build` | Build the harness workspace, then the root CLI |
 | `npm run smoke` | Build, then run offline CLI/TUI startup smoke checks |
-| `npm run pack:check` | Inspect `npm pack --dry-run` contents |
 | `npm run verify` | Deterministic local completion gate |
 | `npm run security:audit` | Live production dependency advisory check |
 
-The build's copied `pi-package` assets are generated and ignored. Do not edit or commit them. Change the exact Pi
-version only as a deliberate runtime-boundary upgrade, then verify installed package source, update the third-party
-notice if needed, and run the full gate.
+The harness fork in `packages/harness` has its own test suite (`npm test --workspace @jakeryderv/rocky-harness`)
+and is excluded from root Biome to keep its diff against upstream v0.84.2 reviewable. Change the exact pinned Pi
+dependency versions only as a deliberate upgrade, then update the third-party notice if needed and run both the
+harness suite and the full root gate.
 
 ## Testing rules
 

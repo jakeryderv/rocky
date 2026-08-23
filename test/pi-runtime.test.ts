@@ -6,14 +6,10 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import {
   applyRockyDiscoveryPolicy,
   enforcePrivateSessionStorage,
-  findExecutable,
   getRockySkillPaths,
   loadPiRuntime,
   prepareRockyEnvironment,
-  requestsUnsupportedSelfUpdate,
   requiresCodingRuntime,
-  rewriteRockyHelp,
-  runRocky,
 } from "../src/runtime/pi-runtime.js";
 
 let fixtureRoot: string;
@@ -24,7 +20,6 @@ let pi: Awaited<ReturnType<typeof loadPiRuntime>>;
 const originalEnvironment = {
   HOME: process.env["HOME"],
   PI_CODING_AGENT_DIR: process.env["PI_CODING_AGENT_DIR"],
-  PI_PACKAGE_DIR: process.env["PI_PACKAGE_DIR"],
   ROCKY_CODING_AGENT_DIR: process.env["ROCKY_CODING_AGENT_DIR"],
 };
 
@@ -53,7 +48,7 @@ description: Fixture skill ${name}
 }
 
 function theme(name: string): string {
-  const dependencyEntry = fileURLToPath(import.meta.resolve("@earendil-works/pi-coding-agent"));
+  const dependencyEntry = fileURLToPath(import.meta.resolve("@jakeryderv/rocky-harness"));
   const darkThemePath = join(dirname(dependencyEntry), "modes", "interactive", "theme", "dark.json");
   const parsed = JSON.parse(readFileSync(darkThemePath, "utf8"));
   parsed.name = name;
@@ -96,10 +91,10 @@ afterAll(() => {
 });
 
 describe("Rocky Pi composition boundary", () => {
-  it("initializes Pi with Rocky distribution metadata", () => {
+  it("initializes the harness with Rocky distribution metadata", () => {
     expect(pi.CONFIG_DIR_NAME).toBe(".rocky");
     expect(pi.getAgentDir()).toBe(agentDir);
-    expect(pi.getPackageDir()).toBe(join(resolve("."), "pi-package"));
+    expect(pi.getPackageDir()).toBe(join(resolve("."), "packages", "harness"));
     expect(pi.InteractiveMode).toBeTypeOf("function");
   });
 
@@ -257,34 +252,10 @@ describe("Rocky Pi composition boundary", () => {
     }
   });
 
-  it("requires system search tools without using Rocky-managed executables", () => {
-    expect(findExecutable(["rg"])).toBeDefined();
-    expect(findExecutable(["rg"], join(fixtureRoot, "empty-path"))).toBeUndefined();
+  it("classifies which invocations need the coding runtime", () => {
     expect(requiresCodingRuntime([])).toBe(true);
     expect(requiresCodingRuntime(["--print", "prompt"])).toBe(true);
     expect(requiresCodingRuntime(["--help"])).toBe(false);
     expect(requiresCodingRuntime(["update", "--models"])).toBe(false);
-  });
-
-  it("rewrites inherited help for Rocky's reserved and unsupported surfaces", () => {
-    const rewritten = rewriteRockyHelp(
-      "rocky update [source|self|pi]   Update pi, extensions, or model catalogs\n" +
-        "PI_PACKAGE_DIR                   - Override package directory (for Nix/Guix store paths)\n" +
-        "  --self                  Update pi only (default when no target is given)\n",
-    );
-    expect(rewritten).toContain("Reserved internally by Rocky");
-    expect(rewritten).toContain("Unsupported by Rocky");
-    expect(rewritten).not.toContain("update [source|self|pi]");
-  });
-
-  it("blocks self-update targets while retaining resource update commands", async () => {
-    expect(requestsUnsupportedSelfUpdate(["update"])).toBe(true);
-    expect(requestsUnsupportedSelfUpdate(["update", "--all"])).toBe(true);
-    expect(requestsUnsupportedSelfUpdate(["update", "self"])).toBe(true);
-    expect(requestsUnsupportedSelfUpdate(["update", "--extensions"])).toBe(false);
-    expect(requestsUnsupportedSelfUpdate(["update", "--models"])).toBe(false);
-    expect(requestsUnsupportedSelfUpdate(["update", "npm:fixture-package"])).toBe(false);
-    expect(requestsUnsupportedSelfUpdate(["update", "--help"])).toBe(false);
-    await expect(runRocky(["update"])).rejects.toThrow("Rocky self-update is not available yet");
   });
 });

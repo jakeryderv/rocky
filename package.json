@@ -4,6 +4,9 @@
   "description": "A focused coding-agent distribution built on Pi",
   "private": true,
   "type": "module",
+  "workspaces": [
+    "packages/*"
+  ],
   "bin": {
     "rocky": "dist/cli.js"
   },
@@ -13,10 +16,8 @@
   },
   "files": [
     "dist",
-    "pi-package",
     "npm-shrinkwrap.json",
     "docs",
-    "examples",
     "README.md",
     "CHANGELOG.md",
     "LICENSE",
@@ -25,7 +26,7 @@
   "scripts": {
     "dev": "npm run build && node --enable-source-maps dist/cli.js",
     "clean": "node scripts/clean.mjs",
-    "build": "npm run clean && tsc -p tsconfig.build.json && node scripts/copy-pi-assets.mjs",
+    "build": "npm run clean && npm run build --workspace @jakeryderv/rocky-harness && tsc -p tsconfig.build.json",
     "start": "node --enable-source-maps dist/cli.js",
     "format": "biome format --write .",
     "format:check": "biome format .",
@@ -37,12 +38,11 @@
     "test:coverage": "vitest run --coverage",
     "smoke": "npm run build && npm run smoke:built",
     "smoke:built": "node scripts/smoke.mjs",
-    "pack:check": "node scripts/check-pack.mjs",
-    "verify": "npm run check && npm run typecheck && npm run test:coverage && npm run build && npm run smoke:built && npm run pack:check",
+    "verify": "npm run check && npm run typecheck && npm run test:coverage && npm run build && npm run smoke:built",
     "security:audit": "npm audit --omit=dev --audit-level=high"
   },
   "dependencies": {
-    "@earendil-works/pi-coding-agent": "0.84.2"
+    "@jakeryderv/rocky-harness": "*"
   },
   "overrides": {
     "@earendil-works/pi-agent-core": "0.84.2",

@@ -3,34 +3,32 @@
 ## Composition
 
 ```text
-rocky executable
-  -> src/runtime/pi-runtime.ts
-     -> Rocky package metadata (`name=rocky`, `configDir=.rocky`)
-     -> @earendil-works/pi-coding-agent main()
-        -> Pi session/runtime services
-        -> Pi InteractiveMode
-        -> @earendil-works/pi-tui
+rocky executable (src/cli.ts)
+  -> src/runtime/pi-runtime.ts (composition boundary)
+     -> @jakeryderv/rocky-harness (packages/harness — forked harness, piConfig name=rocky, configDir=.rocky)
+        -> harness session/runtime services, InteractiveMode
+        -> exactly pinned upstream @earendil-works/pi-ai, pi-agent-core, pi-tui, pi-client, pi-protocol
 ```
 
-Rocky delegates argument parsing, project trust, settings, package/resource loading, sessions, models, extensions,
-and all run modes to Pi. It does not recreate the TUI. `src/runtime/pi-runtime.ts` is the only Pi runtime import
-boundary and exposes only what current callers need: environment preparation, runtime loading for tests/SDK work,
-and CLI execution.
+The harness is a source fork of `@earendil-works/pi-coding-agent` v0.84.2 (vendored pristine in git history,
+then modified; see ADR 0003). It reads its identity (`rocky`, `.rocky`, `ROCKY_*` environment names) from its
+own package metadata, so no relocation bridge or runtime rewriting exists anymore. Rocky delegates argument
+parsing, project trust, settings, package/resource loading, sessions, models, extensions, and all run modes to
+the harness. `src/runtime/pi-runtime.ts` composes policy on top: Rocky-only skill discovery, automatic
+trust denial for resource-less projects, private session storage, and Rocky env-var mapping.
 
-## Rebranding boundary
+## Fork boundary
 
-Pi 0.84.2 reads `piConfig` from the package directory at module initialization. Its SDK can override `agentDir`,
-but it has no `configDirName` option, so an ordinary wrapper would still discover `.pi` project resources. Rocky
-uses Pi's documented `PI_PACKAGE_DIR` asset-relocation hook to point the dependency at `pi-package/package.json`
-before dynamically importing Pi. That metadata selects `rocky`, `.rocky`, and Rocky-named directory environment
-variables for all stock path consumers.
+Forked and Rocky-owned: the harness package (`packages/harness`), excluded from root Biome so its diff against
+upstream v0.84.2 stays reviewable. Removed in the fork: startup version check, self-update, pi.dev install
+reporting, the managed fd/rg downloader (system binaries required), and upstream easter eggs. Under Bun the
+undici global-fetch installation is skipped in favor of native fetch. Extension virtual imports accept
+`@jakeryderv/rocky-harness` and the upstream specifiers.
 
-`npm run build` copies Pi's static themes, interactive assets, HTML-export templates, docs, and examples from the
-exactly pinned dependency into `pi-package/`. No dependency code is edited or patched. The copied runtime package
-metadata is checked against root package metadata, and `npm run pack:check` verifies required files.
-
-This bridge is intentionally narrow but version-coupled: a Pi upgrade requires rerunning path/discovery, smoke, and
-package tests against the new exact version.
+Depended on, exactly pinned, not forked: `pi-ai` (providers/models/auth churn tracked upstream),
+`pi-agent-core` (agent loop), `pi-tui` (until the Rocky client replaces the inherited TUI), `pi-client`,
+`pi-protocol`. Escalation ladder per package: depend, wrap through the Rocky boundary, vendor only when
+wrapping cannot express a needed change (ADR 0003).
 
 ## State and trust
 
@@ -47,18 +45,19 @@ are not loaded. Explicit `--skill` paths remain an intentional user opt-in. Hier
 (`AGENTS.md`/`AGENTS.override.md`/`CLAUDE.md`) use stock Pi discovery, which has no project-trust gate; Rocky
 accepts this deliberately (see ADR 0002) and `--no-context-files` remains a per-invocation opt-out.
 
-Temporary editor, clipboard, bash, and truncated-output files use the OS temporary directory. Some process/session
-controls remain `PI_*`, extension virtual imports remain `@earendil-works/pi-*`, and parts of the default prompt/UI
-still say Pi. These compatibility surfaces are documented rather than hidden.
+Temporary editor, clipboard, bash, and truncated-output files use the OS temporary directory. Some
+process/session controls remain `PI_*` (`PI_OFFLINE`, `PI_TELEMETRY`, `PI_SESSION_*`, …) and the upstream
+extension virtual-import specifiers keep working. These compatibility surfaces are documented rather than
+hidden.
 
-The official Pi self-update feed names the official Pi package, so Rocky rejects self-update targets and disables
-the startup version check. Provider/model and package update operations remain delegated to Pi. Rocky also requires
-system-managed `fd`/`fdfind` and `rg` and refuses `~/.rocky/agent/bin` copies, preventing Pi's unpinned executable
-download path. A hidden inline extension plus a restrictive startup umask enforces private POSIX session storage
-without changing the umask inherited by model-invoked shell commands.
+The harness has no self-update or startup version check; `rocky update --extensions`/`--models` handle managed
+resources. `fd`/`fdfind` and `rg` must be system-installed — the fork's tool manager only resolves from PATH
+and never downloads. A hidden inline extension plus a restrictive startup umask enforces private POSIX session
+storage without changing the umask inherited by model-invoked shell commands.
 
 ## Future behavior
 
-Add Rocky behavior through inline extensions, normal extensions, or supported SDK composition before modifying Pi
-UI/runtime internals. Do not add a generic plugin framework, persistence layer, daemon, or service without a real
-caller and an ADR when the decision crosses the threshold.
+Prefer composition in `src/` (inline extensions, SDK composition) for policy, and direct harness edits for
+behavior the fork owns; keep harness diffs minimal and reviewable against upstream v0.84.2. Do not add a
+generic plugin framework, persistence layer, daemon, or service without a real caller and an ADR when the
+decision crosses the threshold.

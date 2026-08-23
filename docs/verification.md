@@ -14,7 +14,6 @@ Verification
 - npm run test:coverage — Pass (N tests)
 - npm run build — Pass
 - npm run smoke:built — Pass
-- npm run pack:check — Pass
 - npm run security:audit — Pass / Fail / Skip (reason)
 
 Environment

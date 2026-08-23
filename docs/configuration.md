@@ -16,7 +16,6 @@
 | System prompt | `~/.rocky/agent/SYSTEM.md` | `<cwd>/.rocky/SYSTEM.md` |
 | Appended prompt | `~/.rocky/agent/APPEND_SYSTEM.md` | `<cwd>/.rocky/APPEND_SYSTEM.md` |
 | Managed packages | `~/.rocky/agent/{npm,git}/` | `<cwd>/.rocky/{npm,git}/` |
-| Executable guard directory | `~/.rocky/agent/bin/` (must not contain `fd` or `rg`) | — |
 
 A trusted project system/append file takes precedence over its global counterpart. Project settings override global
 settings with nested-object merging. Prompt discovery is nonrecursive; skills recursively discover `SKILL.md`.
@@ -29,13 +28,11 @@ settings with nested-object merging. Prompt discovery is nonrecursive; skills re
 - `ROCKY_TELEMETRY` maps to Pi's install-telemetry control. If neither it nor `PI_TELEMETRY` is set, Rocky
   disables Pi install/update telemetry and the provider attribution controlled by that setting. Provider-specific
   protocol/client headers that are independent of install telemetry may still be sent.
-- `PI_SKIP_VERSION_CHECK` is forced on until Rocky owns an update feed.
 - `PI_CODING_AGENT_DIR` does not redirect Rocky state. Use the Rocky-named variable.
-- `PI_PACKAGE_DIR` is reserved by Rocky's internal composition boundary; incoming values are ignored.
 
 Provider credential variables and other Pi compatibility controls continue to use their upstream names. Rocky
-requires system-installed `fd`/`fdfind` and `rg`; it refuses local copies in `~/.rocky/agent/bin/` so Pi cannot use
-its unpinned executable downloader. Run `rocky --help` for the current CLI options.
+requires system-installed `fd`/`fdfind` and `rg`; the harness resolves them from `PATH` only and never
+downloads executables. Run `rocky --help` for the current CLI options.
 
 On POSIX, Rocky restricts the agent directory and all default/custom session directories to mode `0700`, and
 pre-creates session files with mode `0600`. The restrictive startup umask is restored after session initialization
