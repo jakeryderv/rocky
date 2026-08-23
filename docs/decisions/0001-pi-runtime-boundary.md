@@ -1,6 +1,8 @@
 # ADR 0001: Pi runtime and rebranding boundary
 
-- Status: Accepted
+- Status: Superseded by [ADR 0003](0003-bun-platform-and-harness-fork.md) (the `PI_PACKAGE_DIR` bridge and
+  fork rejection no longer apply; the single runtime import boundary and delegation-to-harness composition
+  remain in effect)
 - Date: 2026-04-10
 
 ## Context

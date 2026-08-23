@@ -1,8 +1,11 @@
 # Third-party notices
 
-Rocky depends on and, during `npm run build`, copies static package assets and documentation from
-`@earendil-works/pi-coding-agent` 0.84.2 (https://github.com/earendil-works/pi, tag `v0.84.2`).
-Those materials are licensed as follows:
+Rocky's harness (`packages/harness`) is a source fork of `@earendil-works/pi-coding-agent` v0.84.2
+(https://github.com/earendil-works/pi, tag `v0.84.2`, commit `914cf1472e715297caa30db4b9535d534a9eb718`),
+including its documentation and examples, and Rocky depends on exactly pinned upstream
+`@earendil-works/pi-*` packages (`pi-ai`, `pi-agent-core`, `pi-tui`, `pi-client`, `pi-protocol`,
+`pi-telemetry`). The forked package retains its MIT license (see its `license` field); Rocky's own code is
+Apache-2.0. The upstream materials are licensed as follows:
 
 MIT License
 

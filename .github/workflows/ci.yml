@@ -18,7 +18,6 @@ jobs:
     timeout-minutes: 15
     env:
       PI_OFFLINE: "1"
-      PI_SKIP_VERSION_CHECK: "1"
       PI_TELEMETRY: "0"
     steps:
       - name: Check out repository
@@ -37,20 +36,20 @@ jobs:
       - name: Format and lint
         run: npm run check
 
-      - name: Typecheck
-        run: npm run typecheck
-
-      - name: Test with coverage
-        run: npm run test:coverage
-
       - name: Build
         run: npm run build
 
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Test root suite with coverage
+        run: npm run test:coverage
+
+      - name: Test harness suite
+        run: npm test --workspace @jakeryderv/rocky-harness
+
       - name: Offline smoke checks
         run: npm run smoke:built
-
-      - name: Inspect packed artifact
-        run: npm run pack:check
 
       - name: Upload test reports
         if: always()

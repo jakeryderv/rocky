@@ -39,6 +39,9 @@ priorities change.
   tests with `modes/interactive` when the OpenTUI client replaces the inherited TUI.
 - **Toolchain still npm/Node** — intentional until step 3; the `rocky` bin shebang is `node`, CI runs Node 24.
   Bun-run is validated by smoke but not the default.
+- **Harness `docs/` and `examples/` are upstream's** — still pi-worded; functionally accurate for inherited
+  behavior (the system prompt points the model at them for app questions). Reword or replace incrementally as
+  the corresponding behavior becomes Rocky-owned.
 - **Kept-compat surfaces** (documented, revisit when they get in the way): `PI_*` env controls
   (`PI_OFFLINE`, `PI_TELEMETRY`, `PI_SESSION_*`, …), upstream extension virtual-import specifiers, the
   `pi.dev` model-catalog overlay (model updates depend on it until Rocky ships its own catalog), the `pi.dev`

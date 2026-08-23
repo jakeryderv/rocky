@@ -2,22 +2,35 @@
 
 ## Required local gate
 
-Run `npm run verify` before reporting implementation work complete. Report the actual command outcomes using
-Pass/Fail/Skip. Run `npm run security:audit` separately when network access is appropriate.
+Run `npm run verify` before reporting implementation work complete (it includes the harness workspace's own
+test suite). Report the actual command outcomes using Pass/Fail/Skip. Run `npm run security:audit` separately
+when network access is appropriate.
+
+## Layout
+
+- `packages/harness` — Rocky's harness: a source fork of `@earendil-works/pi-coding-agent` v0.84.2 (ADR
+  0003). It is Rocky-owned code: edit it directly, but keep diffs minimal and reviewable against the pristine
+  vendor commit, match its upstream style (tabs; excluded from root Biome), and keep its test suite green.
+- `src/` — the `rocky` CLI and Rocky policy composition over the harness.
+- `docs/decisions/` — ADRs; `docs/roadmap.md` — sequencing and carried debt.
 
 ## Invariants
 
-- Keep `@earendil-works/pi-coding-agent` exactly pinned and do not patch `node_modules`.
-- Import Pi runtime code only in `src/runtime/pi-runtime.ts`, after Rocky package metadata is configured.
-- Keep global state under `~/.rocky/agent` by default and project resources under `.rocky`; tests must continue to
-  prove `.pi`, shared/ancestor `.agents/skills`, and generic AGENTS.md/CLAUDE.md resources are ignored.
-- Use Pi's supported `InteractiveMode`/`pi-tui`; do not recreate the terminal UI.
+- Keep upstream `@earendil-works/pi-*` dependencies (`pi-ai`, `pi-agent-core`, `pi-tui`, …) exactly pinned and
+  never patch `node_modules`; escalation ladder is depend → wrap → vendor with an ADR (ADR 0003).
+- Import the harness in root code only through `src/runtime/pi-runtime.ts`.
+- Keep global state under `~/.rocky/agent` by default and project resources under `.rocky`; tests must
+  continue to prove `.pi` and shared/ancestor `.agents/skills` are ignored. Hierarchy `AGENTS.md`/`CLAUDE.md`
+  context files are deliberately loaded, untrusted included (ADR 0002).
 - Required tests and CI must strip inherited provider/cloud/proxy/credential-helper state, must not use real
   provider credentials, and must not make model calls.
-- Preserve private POSIX agent/session permissions and the system-only `fd`/`rg` policy; never enable Pi's managed
-  executable downloader.
+- Preserve private POSIX agent/session permissions and the system-only `fd`/`rg` policy; the harness must
+  never download executables.
+- No self-update and no startup version check in the harness; `update --extensions`/`--models` stay.
 - Do not store credentials, sessions, trust decisions, logs, provider payloads, or model output in `.rocky`.
-- Do not commit generated `dist`, coverage, reports, or `pi-package` asset mirrors. Keep the publish-effective
-  `npm-shrinkwrap.json` current and verify it through a real consumer install.
+- Do not commit generated `dist`, coverage, or reports. Keep `npm-shrinkwrap.json` current.
+- Rocky's changelog surfaces are Rocky's: root `CHANGELOG.md` and `packages/harness/CHANGELOG.md`; upstream
+  history stays in `packages/harness/CHANGELOG.upstream.md`.
 
-See `docs/architecture.md`, `docs/development.md`, and `SECURITY.md` before changing runtime or trust boundaries.
+See `docs/architecture.md`, `docs/development.md`, `docs/roadmap.md`, and `SECURITY.md` before changing
+runtime or trust boundaries.

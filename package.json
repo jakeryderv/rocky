@@ -1,7 +1,7 @@
 {
   "name": "@jakeryderv/rocky",
   "version": "0.1.0",
-  "description": "A focused coding-agent distribution built on Pi",
+  "description": "Rocky coding-agent platform: CLI on a forked Pi harness",
   "private": true,
   "type": "module",
   "workspaces": [
@@ -9,10 +9,6 @@
   ],
   "bin": {
     "rocky": "dist/cli.js"
-  },
-  "piConfig": {
-    "name": "rocky",
-    "configDir": ".rocky"
   },
   "files": [
     "dist",
@@ -38,7 +34,7 @@
     "test:coverage": "vitest run --coverage",
     "smoke": "npm run build && npm run smoke:built",
     "smoke:built": "node scripts/smoke.mjs",
-    "verify": "npm run check && npm run typecheck && npm run test:coverage && npm run build && npm run smoke:built",
+    "verify": "npm run check && npm run build && npm run typecheck && npm run test:coverage && npm test --workspace @jakeryderv/rocky-harness && npm run smoke:built",
     "security:audit": "npm audit --omit=dev --audit-level=high"
   },
   "dependencies": {
