@@ -28,7 +28,8 @@
 		"docs",
 		"examples",
 		"containerization.md",
-		"CHANGELOG.md"
+		"CHANGELOG.md",
+		"CHANGELOG.upstream.md"
 	],
 	"scripts": {
 		"clean": "shx rm -rf dist",

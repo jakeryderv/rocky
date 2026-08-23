@@ -770,7 +770,7 @@ export class InteractiveMode {
 		} else {
 			// The vendored CHANGELOG.md is upstream pi's; label it so the display
 			// does not claim these are Rocky's release notes.
-			this.chatContainer.addChild(new Text(theme.bold(theme.fg("accent", "What's New (upstream pi changelog)")), 1, 0));
+			this.chatContainer.addChild(new Text(theme.bold(theme.fg("accent", "What's New")), 1, 0));
 			this.chatContainer.addChild(new Spacer(1));
 			this.chatContainer.addChild(
 				new Markdown(this.changelogMarkdown.trim(), 1, 0, this.getMarkdownThemeWithSettings()),
@@ -6055,7 +6055,7 @@ export class InteractiveMode {
 		this.chatContainer.addChild(new DynamicBorder());
 		// The vendored CHANGELOG.md is upstream pi's; label it so the display does
 		// not claim these are Rocky's release notes.
-		this.chatContainer.addChild(new Text(theme.bold(theme.fg("accent", "What's New (upstream pi changelog)")), 1, 0));
+		this.chatContainer.addChild(new Text(theme.bold(theme.fg("accent", "What's New")), 1, 0));
 		this.chatContainer.addChild(new Spacer(1));
 		this.chatContainer.addChild(new Markdown(changelogMarkdown, 1, 1, this.getMarkdownThemeWithSettings()));
 		this.chatContainer.addChild(new DynamicBorder());

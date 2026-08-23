@@ -8,8 +8,8 @@ export interface ChangelogEntry {
 	content: string;
 }
 
-// Rocky vendors upstream pi's CHANGELOG.md, so rewritten links must keep
-// pointing at the upstream repo to stay valid.
+// CHANGELOG.md is Rocky's; upstream pi history lives in CHANGELOG.upstream.md.
+// Link rewriting still targets the upstream repo so pre-fork entry links stay valid.
 const GITHUB_REPO = "earendil-works/pi";
 const CHANGELOG_LINK_BASE_PATH = "packages/coding-agent";
 const LEGACY_REPO_RE = /^https:\/\/github\.com\/(?:badlogic|earendil-works)\/pi-mono(?=\/|$)/;
