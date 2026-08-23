@@ -79,6 +79,12 @@ function createUndiciOriginDispatcher(origin: string | URL, options: object): un
 }
 
 export function configureHttpDispatcher(timeoutMs: number = DEFAULT_HTTP_IDLE_TIMEOUT_MS): void {
+	// Bun ships its own native fetch; installing undici's dispatcher and fetch
+	// globals over Bun's node-compat layer is a known source of breakage, so
+	// leave networking to Bun untouched.
+	if (process.versions.bun) {
+		return;
+	}
 	const normalizedTimeoutMs = parseHttpIdleTimeoutMs(timeoutMs);
 	if (normalizedTimeoutMs === undefined) {
 		throw new Error(`Invalid HTTP idle timeout: ${String(timeoutMs)}`);

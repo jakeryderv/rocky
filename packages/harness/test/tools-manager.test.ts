@@ -1,9 +1,7 @@
 import type * as ChildProcess from "node:child_process";
 import type * as Fs from "node:fs";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { ensureTool, type ToolStatus } from "../src/utils/tools-manager.ts";
-
-const originalOffline = process.env.PI_OFFLINE;
 
 vi.mock("fs", async (importOriginal) => {
 	const actual = await importOriginal<typeof Fs>();
@@ -21,14 +19,8 @@ vi.mock("child_process", async (importOriginal) => {
 	};
 });
 
-afterEach(() => {
-	if (originalOffline === undefined) delete process.env.PI_OFFLINE;
-	else process.env.PI_OFFLINE = originalOffline;
-});
-
 describe("ensureTool", () => {
 	it("reports status through a callback without writing to the console", async () => {
-		process.env.PI_OFFLINE = "1";
 		const statuses: ToolStatus[] = [];
 		const consoleLog = vi.spyOn(console, "log").mockImplementation(() => {});
 
@@ -38,7 +30,7 @@ describe("ensureTool", () => {
 		expect(statuses).toEqual([
 			{
 				type: "warning",
-				message: "fd not found. Offline mode enabled, skipping download.",
+				message: "Rocky requires system-installed fd; install it with your system package manager.",
 			},
 		]);
 		expect(consoleLog).not.toHaveBeenCalled();
