@@ -1,12 +1,17 @@
 version: 2
 updates:
   - package-ecosystem: npm
-    directories:
-      - /
-      - /packages/harness
+    directory: /
     schedule:
       interval: weekly
     open-pull-requests-limit: 5
+  # Harness deps mirror upstream pi's exactly tested set: security updates only,
+  # no routine version-bump PRs (upgrades happen deliberately; see AGENTS.md).
+  - package-ecosystem: npm
+    directory: /packages/harness
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 0
   - package-ecosystem: github-actions
     directory: /
     schedule:
