@@ -1,25 +1,22 @@
 version: 2
 updates:
+  # The root entry covers workspace manifests (packages/harness) too.
   - package-ecosystem: npm
     directory: /
     schedule:
       interval: weekly
     open-pull-requests-limit: 5
     ignore:
-      # Keep Node types on the runtime baseline major (.node-version).
-      - dependency-name: "@types/node"
+      # Majors are deliberate decisions everywhere (toolchain, runtime baseline,
+      # harness dep drift from upstream); see AGENTS.md and docs/roadmap.md.
+      - dependency-name: "*"
         update-types: ["version-update:semver-major"]
-      # TypeScript majors are a toolchain decision (deferred until the Bun
-      # toolchain migration; see docs/roadmap.md).
-      - dependency-name: typescript
-        update-types: ["version-update:semver-major"]
-  # Harness deps mirror upstream pi's exactly tested set: security updates only,
-  # no routine version-bump PRs (upgrades happen deliberately; see AGENTS.md).
-  - package-ecosystem: npm
-    directory: /packages/harness
-    schedule:
-      interval: weekly
-    open-pull-requests-limit: 0
+      # Upstream pi packages upgrade in lockstep with a harness reverification,
+      # never automatically (ADR 0003).
+      - dependency-name: "@earendil-works/*"
+      # typebox types flow through the pi-* public APIs; its version must match
+      # the pinned pi packages' copy or the build gets two incompatible instances.
+      - dependency-name: typebox
   - package-ecosystem: github-actions
     directory: /
     schedule:
