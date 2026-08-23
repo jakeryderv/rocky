@@ -11,7 +11,8 @@
       "!pi-package/docs",
       "!pi-package/examples",
       "!pi-package/README.md",
-      "!pi-package/CHANGELOG.md"
+      "!pi-package/CHANGELOG.md",
+      "!packages/harness"
     ]
   },
   "formatter": {
