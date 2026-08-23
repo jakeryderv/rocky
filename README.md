@@ -9,9 +9,10 @@ on exactly pinned upstream Pi packages (`pi-ai`, `pi-agent-core`, …).
 ## Status
 
 The `rocky` executable runs the forked harness with its inherited `InteractiveMode`/`pi-tui` TUI, Rocky path
-isolation, the fork's full regression suite, and a repeatable development gate. Next: a Rocky-owned contract
-and an OpenTUI + Solid client on Bun; the experiments in
-[`docs/project-idea-outline.md`](docs/project-idea-outline.md) remain future work.
+isolation, the fork's full regression suite, and a repeatable development gate. Sequencing and known debt are
+tracked in [`docs/roadmap.md`](docs/roadmap.md): next up are a Rocky-owned contract and an OpenTUI + Solid
+client on Bun; the experiments in [`docs/project-idea-outline.md`](docs/project-idea-outline.md) remain
+future work.
 
 ## Requirements and setup
 
