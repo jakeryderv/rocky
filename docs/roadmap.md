@@ -80,7 +80,10 @@ Then, needed but not blocking: bash passthrough ([#24](https://github.com/jakery
 compaction and steering/follow-up queue UI over
 commands the contract already has ([#26](https://github.com/jakeryderv/rocky/issues/26)); settings, theme,
 and keybinding screens ([#27](https://github.com/jakeryderv/rocky/issues/27)); `export_html`, `fork`,
-`clone`, and session stats ([#28](https://github.com/jakeryderv/rocky/issues/28)).
+`clone`, session stats, and the in-session entry/tree navigation `get_entries` and `get_tree` provide
+([#28](https://github.com/jakeryderv/rocky/issues/28) — moved there from #22, because a fork picker or tree
+view is their only consumer, and modelling the nine-variant `SessionEntry` union without one would be
+designing the contract blind).
 
 ## Phase B — flip the default and move to Bun
 
@@ -127,6 +130,9 @@ client, remote execution, daemon, sandbox isolation).
   Bun's native fetch reads `HTTP(S)_PROXY` itself, so the practical gap is narrow — but proxied requests
   under Bun have not been exercised. Note this is separate from the entry-point gap above: the client path
   skips the call entirely, on either runtime.
+- **A session whose directory no longer exists cannot be resumed from the client.** The harness asks for a
+  replacement cwd through a UI the headless host does not have, so the switch fails with the harness's error
+  instead of prompting. Same root cause as the trust gap below.
 - **The client cannot resolve project trust interactively** ([#30](https://github.com/jakeryderv/rocky/issues/30)). A headless host has no UI to prompt with, so an
   undecided project resolves to untrusted. Phase A needs a trust prompt in the client.
 - **Model calls are unreachable from the test suite by policy**, which is what let the `EEXIST` session-flush

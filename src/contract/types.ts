@@ -173,6 +173,34 @@ export interface SlashCommand {
 }
 
 // ============================================================================
+// Sessions
+// ============================================================================
+
+/**
+ * A past session, reduced to what a picker needs to recognize and choose one.
+ *
+ * `id` is the handle: `switch_session` takes it, and the core resolves it to
+ * wherever the transcript actually lives. The harness's own RPC protocol passes
+ * an absolute `sessionPath` instead, which works only for a client sharing the
+ * core's filesystem — the same reason `SlashCommand` carries `scope` and not a
+ * path.
+ */
+export interface SessionSummary {
+  id: string;
+  name?: string;
+  /** Working directory the session was started in. */
+  cwd: string;
+  /** Epoch milliseconds. */
+  createdAt: number;
+  modifiedAt: number;
+  messageCount: number;
+  /** Opening user message, truncated, so a session is recognizable without opening it. */
+  preview: string;
+  /** Set when this session was forked from another one in the list. */
+  parentId?: string;
+}
+
+// ============================================================================
 // State
 // ============================================================================
 
@@ -216,6 +244,9 @@ export type SessionCommand =
   | { id?: string | undefined; type: "set_model"; provider: string; modelId: string }
   | { id?: string | undefined; type: "get_available_models" }
   | { id?: string | undefined; type: "get_commands" }
+  | { id?: string | undefined; type: "list_sessions" }
+  | { id?: string | undefined; type: "switch_session"; sessionId: string }
+  | { id?: string | undefined; type: "new_session" }
   | { id?: string | undefined; type: "set_thinking_level"; level: ThinkingLevel }
   | { id?: string | undefined; type: "set_steering_mode"; mode: QueueMode }
   | { id?: string | undefined; type: "set_follow_up_mode"; mode: QueueMode }
@@ -252,6 +283,13 @@ export type CommandResult =
       ok: true;
       commands: SlashCommand[];
     }
+  | {
+      type: "command_result";
+      id?: string | undefined;
+      command: "list_sessions";
+      ok: true;
+      sessions: SessionSummary[];
+    }
   /**
    * Acknowledgement for commands that return no payload.
    *
@@ -265,7 +303,7 @@ export type CommandResult =
       id?: string | undefined;
       command: Exclude<
         SessionCommandType,
-        "get_state" | "get_messages" | "get_available_models" | "set_model" | "get_commands"
+        "get_state" | "get_messages" | "get_available_models" | "set_model" | "get_commands" | "list_sessions"
       >;
       ok: true;
     }
@@ -326,6 +364,15 @@ export type SessionEvent =
   | { type: "retry_start"; attempt: number; maxAttempts: number; delayMs: number; error: string }
   | { type: "retry_end"; success: boolean; attempt: number; error?: string }
   // Session
+  /**
+   * The core is now driving a different session.
+   *
+   * A client must discard its transcript and re-read `get_messages`: the
+   * message history it holds belongs to the session that was just replaced.
+   * This is an event rather than only a command result because a session can
+   * also be switched by an extension, with no command to attribute it to.
+   */
+  | { type: "session_switched"; state: SessionState }
   | { type: "state_changed"; state: SessionState }
   | { type: "session_name_changed"; name?: string }
   | { type: "error"; message: string }

@@ -7,7 +7,7 @@
 import type { MouseEvent, ScrollBoxRenderable, TextareaRenderable } from "@opentui/core";
 import { defaultTextareaKeyBindings } from "@opentui/core";
 import { useKeyboard, useRenderer } from "@opentui/solid";
-import type { ModelRef, SessionPort } from "@rocky/contract";
+import type { ModelRef, SessionPort, SessionSummary } from "@rocky/contract";
 import { createEffect, createMemo, createSignal, For, Show } from "solid-js";
 import { mergeCommands, routeSubmission } from "./model/commands.js";
 import {
@@ -21,6 +21,7 @@ import {
 import { editorRows, promptKeyBindings } from "./model/editor.js";
 import { emptyHistory, newer, older, remember } from "./model/history.js";
 import { filterModels, isActiveModel, modelLabel } from "./model/picker.js";
+import { filterSessions, sessionLabel, sortSessions } from "./model/sessions.js";
 import { entryLines } from "./model/transcript.js";
 import { createSessionStore } from "./session-store.js";
 
@@ -32,10 +33,14 @@ export function App(props: { port: SessionPort; onQuit?: (() => void) | undefine
   const [history, setHistory] = createSignal(emptyHistory());
   const [draft, setDraft] = createSignal("");
   const [selected, setSelected] = createSignal(0);
-  // The only overlay today. A union keeps the next one (sessions, settings)
-  // from needing a second boolean that can disagree with this one.
-  const [overlay, setOverlay] = createSignal<"model" | undefined>(undefined);
+  // One signal rather than a flag per overlay: two booleans can disagree, and
+  // "which overlay is open" is a single fact.
+  const [overlay, setOverlay] = createSignal<"model" | "session" | undefined>(undefined);
   const [picked, setPicked] = createSignal(0);
+  // Sampled when a picker opens rather than read during render: relative times
+  // do not need to tick while the list is on screen, and a clock read inside
+  // the render path would make every frame differ from the last.
+  const [now, setNow] = createSignal(0);
   let scroller: ScrollBoxRenderable | undefined;
   let editor: TextareaRenderable | undefined;
   const renderer = useRenderer();
@@ -77,16 +82,23 @@ export function App(props: { port: SessionPort; onQuit?: (() => void) | undefine
 
   createEffect(() => setSelected((current) => clampSelection(current, suggestions().length)));
 
-  /** While the picker is open the input is its filter, not a prompt. */
+  /** While a picker is open the input is its filter, not a prompt. */
   const pickerModels = createMemo(() => (overlay() === "model" ? filterModels(store.models(), draft()) : []));
 
-  createEffect(() => setPicked((current) => clampSelection(current, pickerModels().length)));
+  const pickerSessions = createMemo(() =>
+    overlay() === "session" ? sortSessions(filterSessions(store.sessions(), draft())) : [],
+  );
 
-  const openModelPicker = () => {
+  const pickerLength = () => (overlay() === "model" ? pickerModels().length : pickerSessions().length);
+
+  createEffect(() => setPicked((current) => clampSelection(current, pickerLength())));
+
+  const openPicker = (kind: "model" | "session") => {
     showInInput("");
     setPicked(0);
-    setOverlay("model");
-    void store.loadModels();
+    setNow(Date.now());
+    setOverlay(kind);
+    void (kind === "model" ? store.loadModels() : store.loadSessions());
   };
 
   const closeOverlay = () => {
@@ -97,6 +109,13 @@ export function App(props: { port: SessionPort; onQuit?: (() => void) | undefine
   const chooseModel = (model: ModelRef | undefined) => {
     if (model) {
       void store.setModel(model);
+    }
+    closeOverlay();
+  };
+
+  const chooseSession = (session: SessionSummary | undefined) => {
+    if (session) {
+      void store.switchSession(session.id);
     }
     closeOverlay();
   };
@@ -115,6 +134,10 @@ export function App(props: { port: SessionPort; onQuit?: (() => void) | undefine
       chooseModel(pickerModels()[picked()]);
       return;
     }
+    if (overlay() === "session") {
+      chooseSession(pickerSessions()[picked()]);
+      return;
+    }
     if (text.trim().length === 0) {
       return;
     }
@@ -126,8 +149,10 @@ export function App(props: { port: SessionPort; onQuit?: (() => void) | undefine
     if (route.kind === "client") {
       // A client command never reaches the core, but it is still history: the
       // user typed it, and ↑ has to bring it back like anything else.
-      if (route.name === "model") {
-        openModelPicker();
+      if (route.name === "model" || route.name === "resume") {
+        openPicker(route.name === "model" ? "model" : "session");
+      } else if (route.name === "new") {
+        void store.newSession();
       }
       return;
     }
@@ -182,8 +207,8 @@ export function App(props: { port: SessionPort; onQuit?: (() => void) | undefine
       return;
     }
     if (key.name === "up" || key.name === "down") {
-      if (overlay() === "model") {
-        setPicked((current) => moveSelection(current, pickerModels().length, key.name === "up" ? -1 : 1));
+      if (overlay() !== undefined) {
+        setPicked((current) => moveSelection(current, pickerLength(), key.name === "up" ? -1 : 1));
         return;
       }
       // While the popup is open the arrows drive it, not prompt history.
@@ -308,6 +333,30 @@ export function App(props: { port: SessionPort; onQuit?: (() => void) | undefine
         </box>
       </Show>
 
+      <Show when={overlay() === "session"}>
+        <box style={{ flexDirection: "column", flexShrink: 0 }}>
+          <text fg="#888888">Resume a session ↑↓ · enter resumes · ctrl+c closes</text>
+          <Show
+            when={pickerSessions().length > 0}
+            fallback={
+              <text fg="#888888">
+                {"  "}
+                {store.sessions().length === 0 ? "no sessions found" : "no match"}
+              </text>
+            }
+          >
+            <For each={pickerSessions()}>
+              {(session, index) => (
+                <text fg={index() === picked() ? "#ffffff" : "#888888"}>
+                  {index() === picked() ? "› " : "  "}
+                  {sessionLabel(session, now())}
+                </text>
+              )}
+            </For>
+          </Show>
+        </box>
+      </Show>
+
       <Show when={suggestions().length > 0}>
         <box style={{ flexDirection: "column", flexShrink: 0 }}>
           <For each={suggestions()}>
@@ -331,7 +380,9 @@ export function App(props: { port: SessionPort; onQuit?: (() => void) | undefine
         placeholder={
           overlay() === "model"
             ? "Filter models…"
-            : "Ask Rocky…   / commands · shift+enter newline · ctrl+c aborts, or quits when idle"
+            : overlay() === "session"
+              ? "Filter sessions…"
+              : "Ask Rocky…   / commands · shift+enter newline · ctrl+c aborts, or quits when idle"
         }
         // Grows with the draft rather than scrolling a one-row window, and
         // stops at a bound so a long paste cannot swallow the transcript.

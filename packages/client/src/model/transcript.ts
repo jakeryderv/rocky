@@ -81,6 +81,43 @@ function setBlock(blocks: TranscriptBlock[], index: number, next: TranscriptBloc
   return copy;
 }
 
+/**
+ * Build a transcript from a session's message history.
+ *
+ * Needed when the client attaches to a session that already has one — a resumed
+ * session, or any future client that connects mid-conversation. Without it the
+ * transcript starts empty and the history is invisible even though the core
+ * still has it.
+ *
+ * Tool results are folded into the `toolResults` index rather than becoming
+ * entries, which is exactly what `applyEvent` does with them: they render
+ * inline under the call that produced them.
+ */
+export function transcriptFromMessages(messages: readonly SessionMessage[]): TranscriptState {
+  const state = emptyTranscript();
+  const entries: TranscriptEntry[] = [];
+  for (const message of messages) {
+    if (message.role === "tool_result") {
+      for (const block of message.content) {
+        state.toolResults[block.toolCallId] = block;
+      }
+      continue;
+    }
+    entries.push({
+      role: message.role,
+      blocks: blocksFromMessage(message),
+      complete: true,
+      ...(message.role === "assistant" && message.errorMessage !== undefined
+        ? { errorMessage: message.errorMessage }
+        : {}),
+    });
+    if (message.role === "assistant" && message.stopReason !== "error" && message.stopReason !== "aborted") {
+      state.usage = message.usage;
+    }
+  }
+  return { ...state, entries };
+}
+
 function lastOpenEntry(state: TranscriptState): number {
   for (let i = state.entries.length - 1; i >= 0; i -= 1) {
     if (!state.entries[i]?.complete) {

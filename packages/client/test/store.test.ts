@@ -39,6 +39,14 @@ function fakePort(options: { deferInitialState?: boolean } = {}) {
     },
     execute: async (command): Promise<CommandResult> => {
       sent.push(command);
+      if (command.type === "get_messages") {
+        return {
+          type: "command_result",
+          command: "get_messages",
+          ok: true,
+          messages: [{ role: "user", content: [{ type: "text", text: "resumed history" }], timestamp: 1 }],
+        };
+      }
       if (command.type === "get_commands") {
         return {
           type: "command_result",
@@ -129,5 +137,25 @@ test("surfaces a failed command as transcript error", async () => {
   const store = createSessionStore(port);
   await store.submit("hi");
   expect(store.transcript().error).toBe("provider unavailable");
+  store.dispose();
+});
+
+// The transcript belongs to the session that was just replaced; a resumed
+// session already has history the client has never seen.
+test("rebuilds the transcript from history when the session is switched", async () => {
+  const { port, emit } = fakePort();
+  const store = createSessionStore(port);
+  await settle();
+
+  emit({ type: "message_start", role: "user" });
+  emit({ type: "message_delta", delta: { type: "text_delta", index: 0, text: "old" } });
+  expect(store.transcript().entries).toHaveLength(1);
+
+  emit({ type: "session_switched", state: { ...BASE_STATE, sessionId: "s2" } });
+  await settle();
+
+  expect(store.state()?.sessionId).toBe("s2");
+  expect(store.transcript().entries).toHaveLength(1);
+  expect(store.transcript().entries[0]?.blocks[0]).toEqual({ kind: "text", text: "resumed history" });
   store.dispose();
 });

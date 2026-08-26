@@ -12,6 +12,7 @@ import type {
   ModelRef,
   SessionEvent,
   SessionMessage,
+  SessionSummary,
   SlashCommand,
   SlashCommandScope,
   SlashCommandSource,
@@ -102,6 +103,84 @@ export function toSlashCommand(command: PiSlashCommandLike): SlashCommand | unde
     mapped.scope = scope as SlashCommandScope;
   }
   return mapped;
+}
+
+/**
+ * A harness `SessionInfo`, as `SessionManager.list` reports it.
+ *
+ * `created`/`modified` are `Date` objects there; the contract carries epoch
+ * milliseconds, because a `Date` does not survive JSON.
+ */
+interface PiSessionInfoLike {
+  id: string;
+  path?: string;
+  cwd?: string;
+  name?: string;
+  parentSessionPath?: string;
+  created?: Date | number | string;
+  modified?: Date | number | string;
+  messageCount?: number;
+  firstMessage?: string;
+}
+
+/** How much of the opening message a picker row can show. */
+const PREVIEW_LENGTH = 200;
+
+function toEpochMillis(value: Date | number | string | undefined): number {
+  if (value instanceof Date) {
+    const time = value.getTime();
+    return Number.isNaN(time) ? 0 : time;
+  }
+  if (typeof value === "number") {
+    return Number.isFinite(value) ? value : 0;
+  }
+  if (typeof value === "string") {
+    const parsed = Date.parse(value);
+    return Number.isNaN(parsed) ? 0 : parsed;
+  }
+  return 0;
+}
+
+/**
+ * Reduce a harness session record to the contract shape.
+ *
+ * `parentIds` maps a parent session's file path to its id, because the harness
+ * records a forked session's parent as a path and the contract addresses
+ * sessions by id. A parent outside the listed set simply drops: a client cannot
+ * navigate to a session it was not given.
+ */
+export function toSessionSummary(
+  info: PiSessionInfoLike,
+  parentIds?: ReadonlyMap<string, string>,
+): SessionSummary {
+  const preview = (info.firstMessage ?? "").replace(/\s+/g, " ").trim();
+  const summary: SessionSummary = {
+    id: info.id,
+    cwd: info.cwd ?? "",
+    createdAt: toEpochMillis(info.created),
+    modifiedAt: toEpochMillis(info.modified),
+    messageCount: info.messageCount ?? 0,
+    preview: preview.length > PREVIEW_LENGTH ? `${preview.slice(0, PREVIEW_LENGTH - 1)}…` : preview,
+  };
+  if (info.name !== undefined) {
+    summary.name = info.name;
+  }
+  const parentId = info.parentSessionPath ? parentIds?.get(info.parentSessionPath) : undefined;
+  if (parentId !== undefined) {
+    summary.parentId = parentId;
+  }
+  return summary;
+}
+
+/** Build the path→id index `toSessionSummary` needs from a whole listing. */
+export function indexSessionsByPath(infos: readonly PiSessionInfoLike[]): Map<string, string> {
+  const index = new Map<string, string>();
+  for (const info of infos) {
+    if (info.path) {
+      index.set(info.path, info.id);
+    }
+  }
+  return index;
 }
 
 export function toUsage(usage: Partial<Usage> | undefined): Usage {

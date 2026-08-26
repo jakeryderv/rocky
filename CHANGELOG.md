@@ -2,6 +2,27 @@
 
 ## Unreleased
 
+- **The client can list, resume, and start sessions.** `/resume` opens a picker filtered over name, opening
+  message and directory; `/new` starts a fresh session. The contract gains `list_sessions`, `switch_session`,
+  `new_session`, a `SessionSummary`, and a `session_switched` event. Sessions are addressed by id, not by the
+  absolute `sessionPath` the harness RPC protocol uses — a path only works for a client that shares the
+  core's filesystem.
+
+- **The client host now runs an `AgentSessionRuntime`.** A session cannot resume or replace itself: the
+  operations live on the runtime, which disposes the old session and installs a new object. Everything the
+  host exposes — the model catalog, the command list, the adapter's subscription — now reads through the
+  runtime instead of capturing a session once, and the adapter re-subscribes on every swap. Without that the
+  transcript would freeze after a resume while every command still reported success.
+
+- **Fixed: extensions never started in the client.** The client host built a session but never called
+  `bindExtensions`, which is what emits `session_start` and extends resources from extensions — so an
+  extension that registered commands, tools or handlers simply never booted under `npm run client`, while
+  working normally under `rocky`.
+
+- **Fixed: a resumed conversation showed an empty transcript.** The client only ever accumulated live events
+  and never read the history the core already had. It now rebuilds the transcript from `get_messages`
+  whenever the session changes.
+
 - **The prompt input is a real multi-line editor.** A pasted block used to be held aside and shown as
   `+ N pasted lines`, because the single-line input could not represent newlines — it was uneditable until it
   had been sent. The prompt is now a textarea that grows with the draft up to ten rows, so a paste can be

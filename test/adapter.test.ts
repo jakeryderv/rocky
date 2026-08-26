@@ -582,6 +582,161 @@ describe("PiAgentSessionAdapter", () => {
     });
   });
 
+  it("lists sessions, resolving a forked session's parent to an id", async () => {
+    const { session } = fakeSession();
+    const adapter = new PiAgentSessionAdapter(session, {
+      cwd: "/work",
+      sessions: {
+        list: () => [
+          {
+            id: "parent",
+            path: "/sessions/parent.jsonl",
+            cwd: "/work",
+            name: "first",
+            created: new Date(1_000),
+            modified: new Date(2_000),
+            messageCount: 3,
+            firstMessage: "explain   this\n repo",
+          },
+          {
+            id: "child",
+            path: "/sessions/child.jsonl",
+            cwd: "/work",
+            parentSessionPath: "/sessions/parent.jsonl",
+            created: new Date(3_000),
+            modified: new Date(4_000),
+            messageCount: 1,
+            firstMessage: "",
+          },
+        ],
+        switchTo: async () => ({ cancelled: false }),
+        create: async () => ({ cancelled: false }),
+        current: () => session,
+      },
+    });
+
+    const result = await adapter.execute({ id: "s", type: "list_sessions" });
+    expect(result).toEqual({
+      type: "command_result",
+      id: "s",
+      command: "list_sessions",
+      ok: true,
+      sessions: [
+        {
+          id: "parent",
+          name: "first",
+          cwd: "/work",
+          createdAt: 1_000,
+          modifiedAt: 2_000,
+          messageCount: 3,
+          // Collapsed, because a picker row is one line.
+          preview: "explain this repo",
+        },
+        {
+          id: "child",
+          cwd: "/work",
+          createdAt: 3_000,
+          modifiedAt: 4_000,
+          messageCount: 1,
+          preview: "",
+          parentId: "parent",
+        },
+      ],
+    });
+  });
+
+  it("drops a parent that is not in the listing rather than leaking its path", async () => {
+    const { session } = fakeSession();
+    const adapter = new PiAgentSessionAdapter(session, {
+      cwd: "/work",
+      sessions: {
+        list: () => [{ id: "child", path: "/s/child.jsonl", parentSessionPath: "/s/gone.jsonl" }],
+        switchTo: async () => ({ cancelled: false }),
+        create: async () => ({ cancelled: false }),
+        current: () => session,
+      },
+    });
+    const result = await adapter.execute({ type: "list_sessions" });
+    expect(JSON.stringify(result)).not.toContain("/s/gone.jsonl");
+    expect(result.ok && result.command === "list_sessions" && result.sessions[0]?.parentId).toBeUndefined();
+  });
+
+  // A switch replaces the session object. Keeping the old subscription would
+  // leave the transcript frozen while every command still reported success.
+  it("re-subscribes to the session a switch installed", async () => {
+    const first = fakeSession();
+    const second = fakeSession({ sessionId: "session-2" });
+    let live = first.session;
+    const adapter = new PiAgentSessionAdapter(first.session, {
+      cwd: "/work",
+      sessions: {
+        list: () => [],
+        switchTo: async () => {
+          live = second.session;
+          return { cancelled: false };
+        },
+        create: async () => ({ cancelled: false }),
+        current: () => live,
+      },
+    });
+    const seen: SessionEvent[] = [];
+    adapter.start();
+    adapter.subscribe((event) => seen.push(event));
+
+    await adapter.execute({ type: "switch_session", sessionId: "session-2" });
+
+    expect(seen.filter((event) => event.type === "session_switched")).toHaveLength(1);
+    expect(adapter.getState().sessionId).toBe("session-2");
+
+    seen.length = 0;
+    second.emit({ type: "turn_start" });
+    expect(seen.map((event) => event.type)).toEqual(["turn_start"]);
+
+    // And the replaced session no longer reaches the client.
+    seen.length = 0;
+    first.emit({ type: "turn_start" });
+    expect(seen).toEqual([]);
+  });
+
+  it("leaves the session alone when a switch is cancelled", async () => {
+    const { session } = fakeSession();
+    const other = fakeSession({ sessionId: "session-2" });
+    const adapter = new PiAgentSessionAdapter(session, {
+      cwd: "/work",
+      sessions: {
+        list: () => [],
+        switchTo: async () => ({ cancelled: true }),
+        create: async () => ({ cancelled: false }),
+        current: () => other.session,
+      },
+    });
+    const seen: SessionEvent[] = [];
+    adapter.start();
+    adapter.subscribe((event) => seen.push(event));
+
+    expect(await adapter.execute({ type: "switch_session", sessionId: "session-2" })).toEqual({
+      type: "command_result",
+      id: undefined,
+      command: "switch_session",
+      ok: true,
+    });
+    expect(seen.filter((event) => event.type === "session_switched")).toEqual([]);
+    expect(adapter.getState().sessionId).toBe("session-1");
+  });
+
+  it("reports plainly when the host cannot manage sessions", async () => {
+    const { session } = fakeSession();
+    const adapter = new PiAgentSessionAdapter(session, { cwd: "/work" });
+    for (const command of [
+      { type: "list_sessions" },
+      { type: "switch_session", sessionId: "x" },
+      { type: "new_session" },
+    ] as const) {
+      const result = await adapter.execute(command);
+      expect(result.ok).toBe(false);
+    }
+  });
+
   it("keeps every command result JSON-serializable", async () => {
     const { session } = fakeSession();
     const adapter = new PiAgentSessionAdapter(session, {

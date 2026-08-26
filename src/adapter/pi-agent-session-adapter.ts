@@ -13,12 +13,15 @@ import type {
   SessionEvent,
   SessionMessage,
   SessionState,
+  SessionSummary,
   SlashCommand,
 } from "../contract/index.js";
 import {
+  indexSessionsByPath,
   toModelRef,
   toSessionEvent,
   toSessionMessage,
+  toSessionSummary,
   toSlashCommand,
   toThinkingLevel,
 } from "./map-to-contract.js";
@@ -79,15 +82,32 @@ export type SlashCommandCatalog = () =>
     }[]
   | undefined;
 
+/**
+ * Listing, resuming and starting sessions.
+ *
+ * The harness splits this across two objects: `SessionManager` knows what
+ * sessions exist, and `AgentSessionRuntime` is what replaces the live one. The
+ * adapter should not have to know that, so the host supplies one interface —
+ * and `current()` is part of it because a switch replaces the session object
+ * outright, which the adapter must re-point at and re-subscribe to.
+ */
+export interface SessionLifecycle {
+  list(): Promise<readonly Record<string, unknown>[]> | readonly Record<string, unknown>[];
+  switchTo(sessionId: string): Promise<{ cancelled: boolean }>;
+  create(): Promise<{ cancelled: boolean }>;
+  current(): AgentSessionLike;
+}
+
 export interface PiAgentSessionAdapterOptions {
   cwd: string;
   lookupModel?: ModelLookup;
   listModels?: ModelCatalog;
   listCommands?: SlashCommandCatalog;
+  sessions?: SessionLifecycle;
 }
 
 export class PiAgentSessionAdapter {
-  private readonly session: AgentSessionLike;
+  private session: AgentSessionLike;
   private readonly options: PiAgentSessionAdapterOptions;
   private readonly listeners = new Set<(value: SessionEvent) => void>();
   private unsubscribe: (() => void) | undefined;
@@ -131,6 +151,40 @@ export class PiAgentSessionAdapter {
     this.unsubscribe = undefined;
     this.lastStateJson = undefined;
     this.listeners.clear();
+  }
+
+  /**
+   * Point at the session the runtime is now driving, and tell clients.
+   *
+   * Re-subscribing is not optional: a switch replaces the session object, and
+   * the old subscription belongs to an object nothing drives any more — the
+   * transcript would simply stop updating while commands kept succeeding.
+   *
+   * Public because a session can also be replaced without a command: an
+   * extension can switch or fork one, and the host forwards that here.
+   */
+  retarget(): void {
+    const next = this.options.sessions?.current();
+    if (!next || next === this.session) {
+      // Still worth republishing state: a new session has a new id even when
+      // the object identity happens to be reused.
+      this.publishSwitched();
+      return;
+    }
+    const wasRunning = this.unsubscribe !== undefined;
+    this.unsubscribe?.();
+    this.unsubscribe = undefined;
+    this.session = next;
+    if (wasRunning) {
+      this.start();
+    }
+    this.publishSwitched();
+  }
+
+  private publishSwitched(): void {
+    const state = this.getState();
+    this.lastStateJson = JSON.stringify(state);
+    this.emit({ type: "session_switched", state });
   }
 
   subscribe(listener: (event: SessionEvent) => void): () => void {
@@ -261,6 +315,60 @@ export class PiAgentSessionAdapter {
             }
           }
           return { type: "command_result", id, command: "get_commands", ok: true, commands };
+        }
+        case "list_sessions": {
+          const lifecycle = this.options.sessions;
+          if (!lifecycle) {
+            return {
+              type: "command_result",
+              id,
+              command: "list_sessions",
+              ok: false,
+              error: "This host cannot list sessions",
+            };
+          }
+          const infos = await lifecycle.list();
+          const parentIds = indexSessionsByPath(infos as never);
+          const sessions: SessionSummary[] = infos.map((info) => toSessionSummary(info as never, parentIds));
+          return { type: "command_result", id, command: "list_sessions", ok: true, sessions };
+        }
+        case "switch_session": {
+          const lifecycle = this.options.sessions;
+          if (!lifecycle) {
+            return {
+              type: "command_result",
+              id,
+              command: "switch_session",
+              ok: false,
+              error: "This host cannot switch sessions",
+            };
+          }
+          const result = await lifecycle.switchTo(command.sessionId);
+          if (!result.cancelled) {
+            this.retarget();
+          }
+          // A cancelled switch is not a failure — an extension may veto one —
+          // and the acknowledgement deliberately does not report it. The
+          // `session_switched` event is the signal a client acts on, so a
+          // client that never receives one simply keeps the session it had.
+          return { type: "command_result", id, command: "switch_session", ok: true };
+        }
+        case "new_session": {
+          const lifecycle = this.options.sessions;
+          if (!lifecycle) {
+            return {
+              type: "command_result",
+              id,
+              command: "new_session",
+              ok: false,
+              error: "This host cannot start a new session",
+            };
+          }
+          const result = await lifecycle.create();
+          if (!result.cancelled) {
+            this.retarget();
+          }
+          return { type: "command_result", id, command: "new_session", ok: true };
         }
         case "set_model": {
           const model = this.options.lookupModel?.(command.provider, command.modelId);
