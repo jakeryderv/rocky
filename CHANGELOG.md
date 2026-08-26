@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- **Fix: the client rendered nothing.** `render()` resolves when the app is mounted, not when the TUI exits,
+  so the host's `finally` disposed the session immediately: the UI kept running and accepting input, prompts
+  still returned `ok: true`, and no event ever reached the transcript again. `mountRockyClient` now stays
+  pending until the user quits. Covered by a mount-lifetime test, which no component-level test could catch —
+  the bug lived in the composition around the component, not in it.
+
 - `npm run client` builds first and launches through `scripts/client.mjs`, which reports a missing Bun or a
   non-interactive terminal instead of hanging silently or surfacing an unhandled rejection.
 
