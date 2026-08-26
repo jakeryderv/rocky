@@ -15,6 +15,7 @@ import {
   ensurePrivateDirectory,
   loadPiRuntime,
 } from "../runtime/pi-runtime.js";
+import { collectSlashCommands, type SlashCommandSources } from "./collect-slash-commands.js";
 
 export interface CreateSessionPortOptions {
   cwd?: string;
@@ -85,7 +86,13 @@ export async function createRockySessionPort(
       sessionManager,
     } as never);
 
-    const adapter = new PiAgentSessionAdapter(session as never, { cwd });
+    const adapter = new PiAgentSessionAdapter(session as never, {
+      cwd,
+      // Read on every call rather than snapshotted: extensions register
+      // commands asynchronously and the resource loader reloads, so a list
+      // captured at startup goes stale within the session.
+      listCommands: () => collectSlashCommands(session as unknown as SlashCommandSources),
+    });
     adapter.start();
     restoreOnce();
 

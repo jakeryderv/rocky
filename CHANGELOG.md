@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+- **The client can discover slash commands.** `get_commands` existed in the harness RPC protocol but not in
+  Rocky's contract, so the client had no way to know a project defined `/review`, a prompt template, or a
+  skill. The contract gains `get_commands` and a `SlashCommand` shape, and the client offers a completion
+  popup while a `/token` is being typed. Invocation needs no new command: sending the text as a `prompt` is
+  what runs it, because the core dispatches extension commands and expands skills and prompt templates on the
+  prompt path. Tab accepts a suggestion; Enter always submits what is on screen, so a literal `/whatever`
+  prompt is still sendable with the popup open. The contract deliberately drops the core's `sourceInfo` file
+  paths and keeps only `scope` — enough to tell two same-named commands apart, without handing a remote
+  client a filesystem path.
+
 - **The client no longer polls for session state.** `state_changed` was declared in the contract but never
   emitted, so `session-store.ts` compensated by re-issuing `get_state` after every turn boundary and after
   every command. That is free in-process and wrong the moment a transport sits in between. The adapter now

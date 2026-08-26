@@ -4,6 +4,7 @@ import {
   toModelRef,
   toSessionEvent,
   toSessionMessage,
+  toSlashCommand,
   toStopReason,
   toThinkingLevel,
   toUsage,
@@ -29,6 +30,44 @@ describe("mapping harness values to the contract", () => {
       supportsImages: true,
       contextWindow: 400_000,
       supportedThinkingLevels: ["low", "medium"],
+    });
+  });
+
+  it("reduces a harness slash command to the contract shape", () => {
+    expect(
+      toSlashCommand({
+        name: "explain",
+        description: "Explain a file",
+        source: "prompt",
+        argumentHint: "<path>",
+        sourceInfo: { scope: "project", path: "/home/user/project/.rocky/prompts/explain.md" },
+      }),
+    ).toEqual({
+      name: "explain",
+      description: "Explain a file",
+      source: "prompt",
+      argumentHint: "<path>",
+      scope: "project",
+    });
+  });
+
+  it("keeps filesystem paths out of a slash command", () => {
+    const mapped = toSlashCommand({
+      name: "review",
+      source: "extension",
+      sourceInfo: { scope: "user", path: "/home/user/.rocky/agent/extensions/review.ts" },
+    });
+    expect(JSON.stringify(mapped)).not.toContain("/home/user");
+  });
+
+  it("drops a slash command whose source the contract does not model", () => {
+    expect(toSlashCommand({ name: "quit", source: "builtin" })).toBeUndefined();
+  });
+
+  it("omits a scope the contract does not model rather than leaking it", () => {
+    expect(toSlashCommand({ name: "x", source: "skill", sourceInfo: { scope: "global" } })).toEqual({
+      name: "x",
+      source: "skill",
     });
   });
 
@@ -509,6 +548,40 @@ describe("PiAgentSessionAdapter", () => {
     expect(seen).toEqual([]);
   });
 
+  it("lists slash commands from the catalog, dropping unmodelled sources", async () => {
+    const { session } = fakeSession();
+    const adapter = new PiAgentSessionAdapter(session, {
+      cwd: "/work",
+      listCommands: () => [
+        { name: "review", description: "Review", source: "extension", sourceInfo: { scope: "project" } },
+        { name: "quit", source: "builtin" },
+        { name: "skill:ship", source: "skill" },
+      ],
+    });
+    expect(await adapter.execute({ id: "k", type: "get_commands" })).toEqual({
+      type: "command_result",
+      id: "k",
+      command: "get_commands",
+      ok: true,
+      commands: [
+        { name: "review", description: "Review", source: "extension", scope: "project" },
+        { name: "skill:ship", source: "skill" },
+      ],
+    });
+  });
+
+  it("reports an empty command list when the host supplies no catalog", async () => {
+    const { session } = fakeSession();
+    const adapter = new PiAgentSessionAdapter(session, { cwd: "/work" });
+    expect(await adapter.execute({ type: "get_commands" })).toEqual({
+      type: "command_result",
+      id: undefined,
+      command: "get_commands",
+      ok: true,
+      commands: [],
+    });
+  });
+
   it("keeps every command result JSON-serializable", async () => {
     const { session } = fakeSession();
     const adapter = new PiAgentSessionAdapter(session, {
@@ -519,6 +592,7 @@ describe("PiAgentSessionAdapter", () => {
       { type: "get_state" },
       { type: "get_messages" },
       { type: "get_available_models" },
+      { type: "get_commands" },
     ] as const) {
       const result = await adapter.execute(command);
       expect(JSON.parse(JSON.stringify(result))).toEqual(JSON.parse(JSON.stringify(result)));

@@ -13,8 +13,15 @@ import type {
   SessionEvent,
   SessionMessage,
   SessionState,
+  SlashCommand,
 } from "../contract/index.js";
-import { toModelRef, toSessionEvent, toSessionMessage, toThinkingLevel } from "./map-to-contract.js";
+import {
+  toModelRef,
+  toSessionEvent,
+  toSessionMessage,
+  toSlashCommand,
+  toThinkingLevel,
+} from "./map-to-contract.js";
 
 /**
  * The slice of `AgentSession` this adapter uses.
@@ -54,10 +61,29 @@ export type ModelLookup = (provider: string, modelId: string) => unknown | undef
 /** Lists models the session could switch to. */
 export type ModelCatalog = () => readonly { provider: string; id: string }[];
 
+/**
+ * Lists the `/name` commands the session can run.
+ *
+ * A callback rather than a session getter, because the harness never exposes
+ * one: the merged list lives in a private closure and is reassembled from three
+ * registries. The host that owns those registries supplies it, the same way it
+ * supplies the model catalog.
+ */
+export type SlashCommandCatalog = () =>
+  | readonly {
+      name: string;
+      description?: string | undefined;
+      source: string;
+      argumentHint?: string | undefined;
+      sourceInfo?: { scope?: string; [key: string]: unknown } | undefined;
+    }[]
+  | undefined;
+
 export interface PiAgentSessionAdapterOptions {
   cwd: string;
   lookupModel?: ModelLookup;
   listModels?: ModelCatalog;
+  listCommands?: SlashCommandCatalog;
 }
 
 export class PiAgentSessionAdapter {
@@ -225,6 +251,16 @@ export class PiAgentSessionAdapter {
             }
           }
           return { type: "command_result", id, command: "get_available_models", ok: true, models };
+        }
+        case "get_commands": {
+          const commands: SlashCommand[] = [];
+          for (const command of this.options.listCommands?.() ?? []) {
+            const mapped = toSlashCommand(command);
+            if (mapped) {
+              commands.push(mapped);
+            }
+          }
+          return { type: "command_result", id, command: "get_commands", ok: true, commands };
         }
         case "set_model": {
           const model = this.options.lookupModel?.(command.provider, command.modelId);

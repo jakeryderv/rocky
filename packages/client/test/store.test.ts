@@ -39,6 +39,14 @@ function fakePort(options: { deferInitialState?: boolean } = {}) {
     },
     execute: async (command): Promise<CommandResult> => {
       sent.push(command);
+      if (command.type === "get_commands") {
+        return {
+          type: "command_result",
+          command: "get_commands",
+          ok: true,
+          commands: [{ name: "compact", source: "extension" }],
+        };
+      }
       if (command.type === "get_state") {
         if (options.deferInitialState) {
           await initialStateGate;
@@ -77,7 +85,22 @@ test("issues no get_state after a command", async () => {
   await settle();
   await store.submit("hello");
 
-  expect(sent.map((command) => command.type)).toEqual(["get_state", "prompt"]);
+  expect(sent.map((command) => command.type)).toEqual(["get_state", "get_commands", "prompt"]);
+  store.dispose();
+});
+
+test("loads slash commands at startup and re-reads them when the agent settles", async () => {
+  const { port, sent, emit } = fakePort();
+  const store = createSessionStore(port);
+  await settle();
+
+  expect(store.commands().map((command) => command.name)).toEqual(["compact"]);
+
+  // Extensions register commands asynchronously and the resource loader
+  // reloads, so a list captured once at startup goes stale within the session.
+  emit({ type: "settled" });
+  await settle();
+  expect(sent.filter((command) => command.type === "get_commands")).toHaveLength(2);
   store.dispose();
 });
 
