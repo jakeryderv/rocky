@@ -83,6 +83,7 @@ export const FIXTURE_EVENTS: SessionEvent[] = [
     delta: { type: "tool_call_end", index: 2, id: "call_1", name: "read", arguments: { path: "README.md" } },
   },
   { type: "tool_start", toolCallId: "call_1", name: "read", arguments: { path: "README.md" } },
+  { type: "tool_progress", toolCallId: "call_2", name: "bash", content: "building…", truncated: true },
   {
     type: "tool_end",
     toolCallId: "call_1",

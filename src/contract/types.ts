@@ -267,6 +267,15 @@ export type SessionEvent =
   | { type: "message_end"; message: SessionMessage }
   // Tools
   | { type: "tool_start"; toolCallId: string; name: string; arguments: Record<string, unknown> }
+  /**
+   * Output so far from a running tool.
+   *
+   * `content` is a CUMULATIVE snapshot, not a delta: replace what is displayed,
+   * never append. Only the bash tool emits these today (throttled upstream at
+   * ~100ms); the other built-in tools accept the callback and ignore it, so a
+   * client must not expect progress from them.
+   */
+  | { type: "tool_progress"; toolCallId: string; name: string; content: string; truncated?: boolean }
   | { type: "tool_end"; toolCallId: string; result: ToolResultBlock }
   // Queueing
   | { type: "queue_update"; steering: string[]; followUp: string[] }

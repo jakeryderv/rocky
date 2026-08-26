@@ -109,13 +109,36 @@ describe("mapping harness values to the contract", () => {
     expect(
       toSessionEvent({ type: "tool_execution_start", toolCallId: "t1", toolName: "read", args: { p: 1 } }),
     ).toEqual({ type: "tool_start", toolCallId: "t1", name: "read", arguments: { p: 1 } });
+    // The real shape: upstream emits an AgentToolResult wrapper, not a string.
+    // The previous fixture used `result: "done"`, which is why a JSON-dump bug
+    // survived two reviews on this path.
     expect(
-      toSessionEvent({ type: "tool_execution_end", toolCallId: "t1", result: "done", isError: true }),
+      toSessionEvent({
+        type: "tool_execution_end",
+        toolCallId: "t1",
+        result: { content: [{ type: "text", text: "done" }], details: {} },
+        isError: true,
+      }),
     ).toEqual({
       type: "tool_end",
       toolCallId: "t1",
       result: { type: "tool_result", toolCallId: "t1", content: "done", isError: true },
     });
+  });
+
+  it("accepts a bare string or array from an extension tool", () => {
+    expect(toSessionEvent({ type: "tool_execution_end", toolCallId: "t1", result: "plain text" })).toEqual({
+      type: "tool_end",
+      toolCallId: "t1",
+      result: { type: "tool_result", toolCallId: "t1", content: "plain text" },
+    });
+    const update = toSessionEvent({
+      type: "tool_execution_update",
+      toolCallId: "t1",
+      toolName: "custom",
+      partialResult: [{ type: "text", text: "working" }],
+    });
+    expect((update as { content?: string }).content).toBe("working");
   });
 
   // pi's ToolResultMessage has no `output` field and its `content` is a block
@@ -226,6 +249,36 @@ describe("mapping harness values to the contract", () => {
       usage: { input: 22, totalTokens: 22 },
     });
     expect((wire as { usage?: { input: number } }).usage?.input).toBe(22);
+  });
+
+  // Only bash emits these, and the payload is a cumulative snapshot in the same
+  // block shape as a tool result.
+  it("maps a running tool's cumulative output", () => {
+    expect(
+      toSessionEvent({
+        type: "tool_execution_update",
+        toolCallId: "c1",
+        toolName: "bash",
+        partialResult: { content: [{ type: "text", text: "line one\nline two" }], details: {} },
+      }),
+    ).toEqual({ type: "tool_progress", toolCallId: "c1", name: "bash", content: "line one\nline two" });
+  });
+
+  it("flags truncated tool output", () => {
+    const event = toSessionEvent({
+      type: "tool_execution_update",
+      toolCallId: "c1",
+      toolName: "bash",
+      partialResult: {
+        content: [{ type: "text", text: "lots" }],
+        details: { truncation: { truncated: true } },
+      },
+    });
+    expect((event as { truncated?: boolean }).truncated).toBe(true);
+  });
+
+  it("ignores a tool update with no payload", () => {
+    expect(toSessionEvent({ type: "tool_execution_update", toolCallId: "c1" })).toBeUndefined();
   });
 
   it("drops harness events with no contract representation", () => {

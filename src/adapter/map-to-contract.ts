@@ -201,6 +201,22 @@ function toResultText(value: unknown): string {
   }
 }
 
+/**
+ * Flatten whatever a tool handed back into display text.
+ *
+ * Upstream wraps results as `AgentToolResult` — `{ content: (TextContent |
+ * ImageContent)[]; details }` — on both the `tool_execution_end` event and the
+ * toolResult message. Flattening without unwrapping first dumps the whole
+ * wrapper as JSON onto the screen. Bare strings and bare arrays are also
+ * accepted, because extension tools are not obliged to use the wrapper.
+ */
+function toToolText(value: unknown): string {
+  if (value !== null && typeof value === "object" && !Array.isArray(value) && "content" in value) {
+    return toResultText((value as { content: unknown }).content);
+  }
+  return toResultText(value);
+}
+
 export function toSessionMessage(message: PiMessageLike): SessionMessage | undefined {
   const timestamp = message.timestamp ?? 0;
 
@@ -243,7 +259,7 @@ export function toSessionMessage(message: PiMessageLike): SessionMessage | undef
         {
           type: "tool_result",
           toolCallId: message.toolCallId ?? "",
-          content: toResultText(message.content),
+          content: toToolText(message.content),
           ...(message.isError ? { isError: true } : {}),
         },
       ],
@@ -306,6 +322,7 @@ interface PiSessionEventLike {
   args?: unknown;
   result?: unknown;
   isError?: boolean;
+  partialResult?: unknown;
   reason?: unknown;
   aborted?: boolean;
   errorMessage?: string;
@@ -377,11 +394,29 @@ export function toSessionEvent(event: PiSessionEventLike): SessionEvent | undefi
         name: event.toolName ?? "",
         arguments: toPlainArguments(event.args),
       };
+    case "tool_execution_update": {
+      // Only bash emits these, and its payload is a cumulative snapshot in the
+      // same block shape as a tool result, so reuse the result flattener.
+      const partial = event.partialResult as
+        | { content?: unknown; details?: { truncation?: unknown } }
+        | undefined;
+      if (!partial) {
+        return undefined;
+      }
+      const content = toToolText(partial);
+      return {
+        type: "tool_progress",
+        toolCallId: event.toolCallId ?? "",
+        name: event.toolName ?? "",
+        content,
+        ...(partial.details?.truncation ? { truncated: true } : {}),
+      };
+    }
     case "tool_execution_end": {
       const result: ToolResultBlock = {
         type: "tool_result",
         toolCallId: event.toolCallId ?? "",
-        content: toResultText(event.result),
+        content: toToolText(event.result),
         ...(event.isError ? { isError: true } : {}),
       };
       return { type: "tool_end", toolCallId: result.toolCallId, result };

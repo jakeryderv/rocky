@@ -1,13 +1,13 @@
 /**
- * Rocky's terminal client, first slice: transcript, prompt input, status line.
+ * Rocky's terminal client: scrollable transcript, prompt input, status line.
  *
  * Receives a `SessionPort` and touches nothing else from Rocky, so it renders
  * identically against a real session and a fake one.
  */
-
+import type { MouseEvent, ScrollBoxRenderable } from "@opentui/core";
 import { useKeyboard } from "@opentui/solid";
 import type { SessionPort } from "@rocky/contract";
-import { createMemo, For, Show } from "solid-js";
+import { createEffect, createMemo, createSignal, For, Show } from "solid-js";
 import { entryLines } from "./model/transcript.js";
 import { createSessionStore } from "./session-store.js";
 
@@ -15,6 +15,26 @@ const ROLE_PREFIX = { user: "›", assistant: "🅡", tool_result: "⚙" } as co
 
 export function App(props: { port: SessionPort }) {
   const store = createSessionStore(props.port);
+  const [pinned, setPinned] = createSignal(true);
+  let scroller: ScrollBoxRenderable | undefined;
+
+  // These handlers run during event dispatch, before scrollTop is updated, so
+  // sampling directly would read the pre-scroll position.
+  const resamplePinned = () => queueMicrotask(() => setPinned(atBottom()));
+
+  const atBottom = () => {
+    if (!scroller) {
+      return true;
+    }
+    return scroller.scrollTop >= scroller.scrollHeight - scroller.viewport.height - 1;
+  };
+
+  // There is no scroll event on ScrollBoxRenderable, so re-sample the geometry
+  // whenever the transcript changes.
+  createEffect(() => {
+    store.transcript().entries;
+    setPinned(atBottom());
+  });
 
   useKeyboard((key) => {
     // Escape aborts an in-flight turn; Ctrl+C is left to the host.
@@ -39,11 +59,39 @@ export function App(props: { port: SessionPort }) {
 
   return (
     <box style={{ flexDirection: "column", height: "100%" }}>
-      <box style={{ flexGrow: 1, flexDirection: "column", padding: 1 }}>
+      <scrollbox
+        ref={(element: ScrollBoxRenderable) => {
+          scroller = element;
+          // Must be cleared before anything can focus it: blur() early-returns
+          // when a renderable is not focusable, so a scrollbox that gets focused
+          // first can never hand focus back to the input.
+          element.focusable = false;
+        }}
+        stickyScroll
+        // stickyScroll alone pins to the TOP, because scrollTop starts at 0.
+        stickyStart="bottom"
+        // flexBasis: 0 is required. With flexGrow alone the box claims one row
+        // too many, painting over the status line and losing the newest entry.
+        style={{ flexGrow: 1, flexShrink: 1, flexBasis: 0, minHeight: 0, padding: 1 }}
+        // The handler runs during event dispatch, before scrollTop is updated,
+        // so sampling here directly would read the pre-scroll position.
+        onMouseScroll={(_event: MouseEvent) => resamplePinned()}
+        // Dragging the scrollbar thumb is a drag, not a scroll event.
+        onMouseDrag={(_event: MouseEvent) => resamplePinned()}
+        onMouseUp={(_event: MouseEvent) => resamplePinned()}
+      >
+        {/*
+          Iterate the entry objects themselves. The reducer preserves the
+          identity of unchanged entries, and <For> keys by reference, so only
+          the entry that actually changed is re-rendered. Mapping to fresh
+          objects here (a memo returning {role, lines}) instead recreates every
+          row on every event, which exhausts OpenTUI's native SyntaxStyle
+          handles and kills the TUI a few hundred entries into a session.
+        */}
         <For each={store.transcript().entries}>
           {(entry) => (
             <box style={{ flexDirection: "column", marginBottom: 1 }}>
-              <For each={entryLines(entry, store.transcript().toolResults)}>
+              <For each={entryLines(entry, store.transcript().toolResults, store.transcript().toolProgress)}>
                 {(line, index) => (
                   <text>
                     {index() === 0 ? `${ROLE_PREFIX[entry.role]} ` : "  "}
@@ -54,17 +102,30 @@ export function App(props: { port: SessionPort }) {
             </box>
           )}
         </For>
-      </box>
+      </scrollbox>
 
-      <Show when={store.transcript().error}>
-        {(error: () => string) => <text fg="#ff5555">✖ {error()}</text>}
+      <Show when={!pinned()}>
+        <text fg="#888888" style={{ flexShrink: 0 }}>
+          ↓ more below
+        </text>
       </Show>
 
-      <text fg="#888888">{status()}</text>
+      <Show when={store.transcript().error}>
+        {(error: () => string) => (
+          <text fg="#ff5555" style={{ flexShrink: 0 }}>
+            ✖ {error()}
+          </text>
+        )}
+      </Show>
+
+      <text fg="#888888" style={{ flexShrink: 0 }}>
+        {status()}
+      </text>
 
       <input
         focused
         placeholder="Ask Rocky…  (esc aborts)"
+        style={{ flexShrink: 0 }}
         on:enter={(value: string) => {
           if (value.trim().length > 0) {
             void store.submit(value);

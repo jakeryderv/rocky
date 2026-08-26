@@ -12,6 +12,25 @@ function run(events: SessionEvent[], from: TranscriptState = emptyTranscript()):
 }
 
 describe("transcript reduction", () => {
+  // Tool output renders inline under its call, so a tool_result message must
+  // not also become its own entry — that duplicated the output and the copy
+  // bypassed the tail window.
+  it("does not open a separate entry for tool-result messages", () => {
+    const state = run([
+      { type: "message_start", role: "assistant" },
+      { type: "message_start", role: "tool_result" },
+      {
+        type: "message_end",
+        message: {
+          role: "tool_result",
+          content: [{ type: "tool_result", toolCallId: "c1", content: "noisy output" }],
+          timestamp: 1,
+        },
+      },
+    ]);
+    expect(state.entries.map((e) => e.role)).toEqual(["assistant"]);
+  });
+
   it("opens an entry per message_start, with the role that started", () => {
     const state = run([
       { type: "message_start", role: "user" },
@@ -197,11 +216,94 @@ describe("transcript reduction", () => {
       toolCallId: "c1",
       result: { type: "tool_result", toolCallId: "c1", content: "line one\nline two" },
     });
-    expect(entryLines(state.entries[0] as never, state.toolResults)).toEqual([
+    expect(entryLines(state.entries[0] as never, state.toolResults, state.toolProgress)).toEqual([
       "⚙ read",
       "  line one",
       "  line two",
     ]);
+  });
+
+  it("shows a running tool's cumulative output and replaces it, never appends", () => {
+    let state = run([
+      { type: "message_start", role: "assistant" },
+      {
+        type: "message_delta",
+        delta: { type: "tool_call_end", index: 0, id: "c1", name: "bash", arguments: { command: "make" } },
+      },
+      { type: "tool_progress", toolCallId: "c1", name: "bash", content: "step 1" },
+    ]);
+    expect(entryLines(state.entries[0] as never, state.toolResults, state.toolProgress)).toEqual([
+      "⚙ bash …",
+      "  step 1",
+    ]);
+
+    // Cumulative snapshots replace; appending would duplicate "step 1".
+    state = applyEvent(state, {
+      type: "tool_progress",
+      toolCallId: "c1",
+      name: "bash",
+      content: "step 1\nstep 2",
+    });
+    expect(entryLines(state.entries[0] as never, state.toolResults, state.toolProgress)).toEqual([
+      "⚙ bash …",
+      "  step 1",
+      "  step 2",
+    ]);
+  });
+
+  it("keeps only the newest lines of a long running tool, and says how many were dropped", () => {
+    const state = run([
+      { type: "message_start", role: "assistant" },
+      {
+        type: "message_delta",
+        delta: { type: "tool_call_end", index: 0, id: "c1", name: "bash", arguments: {} },
+      },
+      {
+        type: "tool_progress",
+        toolCallId: "c1",
+        name: "bash",
+        content: Array.from({ length: 10 }, (_, i) => `line ${i + 1}`).join("\n"),
+      },
+    ]);
+    const lines = entryLines(state.entries[0] as never, state.toolResults, state.toolProgress);
+    expect(lines[0]).toBe("⚙ bash …");
+    expect(lines[1]).toBe("  … 4 earlier lines");
+    expect(lines.at(-1)).toBe("  line 10");
+  });
+
+  it("lets the finished result supersede progress and forgets the running output", () => {
+    let state = run([
+      { type: "message_start", role: "assistant" },
+      {
+        type: "message_delta",
+        delta: { type: "tool_call_end", index: 0, id: "c1", name: "bash", arguments: {} },
+      },
+      { type: "tool_progress", toolCallId: "c1", name: "bash", content: "partial" },
+    ]);
+    state = applyEvent(state, {
+      type: "tool_end",
+      toolCallId: "c1",
+      result: { type: "tool_result", toolCallId: "c1", content: "final output" },
+    });
+    expect(state.toolProgress).toEqual({});
+    expect(entryLines(state.entries[0] as never, state.toolResults, state.toolProgress)).toEqual([
+      "⚙ bash",
+      "  final output",
+    ]);
+  });
+
+  it("flags truncated running output", () => {
+    const state = run([
+      { type: "message_start", role: "assistant" },
+      {
+        type: "message_delta",
+        delta: { type: "tool_call_end", index: 0, id: "c1", name: "bash", arguments: {} },
+      },
+      { type: "tool_progress", toolCallId: "c1", name: "bash", content: "lots", truncated: true },
+    ]);
+    expect(entryLines(state.entries[0] as never, state.toolResults, state.toolProgress)).toContain(
+      "  … output truncated",
+    );
   });
 
   it("ignores events it does not render and never mutates its input", () => {

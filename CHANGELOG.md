@@ -2,6 +2,21 @@
 
 ## Unreleased
 
+- Client: scrollable transcript. The transcript now lives in a `<scrollbox>` pinned to the newest content, with
+  a `↓ more below` indicator when scrolled away; previously anything past the terminal height simply overflowed.
+- Client: show a running tool's output. New `tool_progress` contract event carries the cumulative snapshot the
+  harness already emits for the bash tool (only bash emits these; other built-in tools accept the callback and
+  ignore it), so a long command shows its output instead of a frozen `⚙ bash …`. Output is tail-clipped with a
+  count of dropped lines, and the finished result supersedes it.
+- Fix: tool results were rendered twice — inline under the tool call and again as a separate `tool_result`
+  entry, the second copy unclipped, so a noisy command buried the transcript. Tool output now renders once,
+  under its call.
+- Fix: `tool_end` dumped the raw `AgentToolResult` wrapper as JSON instead of its text. Same bug class as the
+  one ADR 0004 records, which had been fixed only on the message path; the test that should have caught it used
+  an invented `result: "done"` shape. Both paths now unwrap, and the fixtures use real shapes.
+- Fix: an aborted or failed turn zeroed the token counter, because the synthetic assistant message carries an
+  all-zero usage.
+
 - Add `packages/client`, Rocky's first OpenTUI + Solid terminal client: a streaming transcript (text,
   thinking, tool calls with their results), a prompt input, abort on escape, and a status line with model,
   thinking level, streaming state, and live token usage. It consumes only the contract, through a new

@@ -29,13 +29,18 @@ export interface TranscriptState {
   entries: TranscriptEntry[];
   /** Results keyed by tool call id, so a call can render its own output. */
   toolResults: Record<string, ToolResultBlock>;
+  /**
+   * Cumulative output from tools still running, keyed by tool call id.
+   * Cleared on `tool_end`, where the authoritative result takes over.
+   */
+  toolProgress: Record<string, { content: string; truncated: boolean }>;
   streaming: boolean;
   usage?: Usage;
   error?: string;
 }
 
 export function emptyTranscript(): TranscriptState {
-  return { entries: [], toolResults: {}, streaming: false };
+  return { entries: [], toolResults: {}, toolProgress: {}, streaming: false };
 }
 
 function blocksFromMessage(message: SessionMessage): TranscriptBlock[] {
@@ -103,6 +108,13 @@ export function applyEvent(state: TranscriptState, event: SessionEvent): Transcr
       return { ...state, streaming: false };
 
     case "message_start":
+      // Tool output is rendered inline under its tool call, from `tool_end`.
+      // The harness also emits a message pair for the same result; rendering
+      // both duplicates the output, and the second copy bypasses the tail
+      // window that keeps a noisy command from burying the transcript.
+      if (event.role === "tool_result") {
+        return state;
+      }
       return {
         ...state,
         entries: [...state.entries, { role: event.role, blocks: [], complete: false }],
@@ -153,6 +165,10 @@ export function applyEvent(state: TranscriptState, event: SessionEvent): Transcr
     }
 
     case "message_end": {
+      // Counterpart to the message_start case above.
+      if (event.message.role === "tool_result") {
+        return state;
+      }
       const at = lastOpenEntry(state);
       const settled: TranscriptEntry = {
         role: event.message.role,
@@ -173,15 +189,37 @@ export function applyEvent(state: TranscriptState, event: SessionEvent): Transcr
         entries,
         // The authoritative message carries final totals; streaming deltas only
         // carry the running count, which is not summed until the turn ends.
-        ...(event.message.role === "assistant" ? { usage: event.message.usage } : {}),
+        // A failed or aborted turn carries an all-zero usage, which would blank
+        // a counter the user was reading — keep the last real figure instead.
+        ...(event.message.role === "assistant" &&
+        event.message.stopReason !== "error" &&
+        event.message.stopReason !== "aborted"
+          ? { usage: event.message.usage }
+          : {}),
         ...(event.message.role === "assistant" && event.message.errorMessage !== undefined
           ? { error: event.message.errorMessage }
           : {}),
       };
     }
 
-    case "tool_end":
-      return { ...state, toolResults: { ...state.toolResults, [event.toolCallId]: event.result } };
+    case "tool_progress":
+      return {
+        ...state,
+        // Cumulative: replace, never append.
+        toolProgress: {
+          ...state.toolProgress,
+          [event.toolCallId]: { content: event.content, truncated: event.truncated === true },
+        },
+      };
+
+    case "tool_end": {
+      const { [event.toolCallId]: _finished, ...stillRunning } = state.toolProgress;
+      return {
+        ...state,
+        toolResults: { ...state.toolResults, [event.toolCallId]: event.result },
+        toolProgress: stillRunning,
+      };
+    }
 
     case "error":
       return { ...state, error: event.message, streaming: false };
@@ -194,8 +232,14 @@ export function applyEvent(state: TranscriptState, event: SessionEvent): Transcr
   }
 }
 
+const TOOL_OUTPUT_LINES = 6;
+
 /** Flatten an entry to plain lines, which is what the renderer draws. */
-export function entryLines(entry: TranscriptEntry, toolResults: Record<string, ToolResultBlock>): string[] {
+export function entryLines(
+  entry: TranscriptEntry,
+  toolResults: Record<string, ToolResultBlock>,
+  toolProgress: Record<string, { content: string; truncated: boolean }> = {},
+): string[] {
   const lines: string[] = [];
   for (const block of entry.blocks) {
     if (block.kind === "text") {
@@ -208,12 +252,27 @@ export function entryLines(entry: TranscriptEntry, toolResults: Record<string, T
       }
     } else {
       const name = block.name.length > 0 ? block.name : "(tool)";
-      lines.push(`⚙ ${name}${block.settled ? "" : " …"}`);
       const result = block.id.length > 0 ? toolResults[block.id] : undefined;
-      if (result) {
-        for (const line of result.content.split("\n").slice(0, 6)) {
+      const running = block.id.length > 0 ? toolProgress[block.id] : undefined;
+      // `settled` means the arguments finished streaming, not that the tool
+      // finished running — only a result means that.
+      lines.push(`⚙ ${name}${result ? "" : " …"}`);
+      // A finished result supersedes whatever progress was showing.
+      const body = result?.content ?? running?.content;
+      if (body !== undefined && body.length > 0) {
+        // Tail, not head: for a running command the newest output matters most.
+        const all = body.split("\n");
+        const shown = all.slice(-TOOL_OUTPUT_LINES);
+        if (all.length > shown.length) {
+          const dropped = all.length - shown.length;
+          lines.push(`  … ${dropped} earlier line${dropped === 1 ? "" : "s"}`);
+        }
+        for (const line of shown) {
           lines.push(`  ${line}`);
         }
+      }
+      if (!result && running?.truncated) {
+        lines.push("  … output truncated");
       }
     }
   }
