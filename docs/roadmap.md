@@ -43,6 +43,10 @@ other 19 live in `core/` and `cli/` and need real work (see phase C).
 - **First OpenTUI + Solid client slice** (`packages/client`) over a `SessionPort`, with a headless Bun render
   suite, a root-level client smoke, and a separate Bun CI job. See ADR 0005. Scrollback, incremental tool
   output, a working quit path, prompt history, and multi-line paste have since landed.
+- **Model switcher** ([#21](https://github.com/jakeryderv/rocky/issues/21)). A `/model` picker in the client,
+  and the model catalog wired into the client host — it was never supplied, so `get_available_models`
+  returned nothing and `set_model` always failed. The client also gained a place for commands of its own,
+  which is where `/compact` and the settings screens will land.
 - **Slash-command discovery** ([#19](https://github.com/jakeryderv/rocky/issues/19)). `get_commands` and a
   `SlashCommand` shape in the contract, assembled in the client host from the three registries the harness
   merges in a private closure, with a completion popup in the client. Invocation rides the existing `prompt`
@@ -67,11 +71,9 @@ with it.
    `modes/interactive` (`login-dialog.ts`, `oauth-selector.ts`) and the `rocky auth` subcommand, so the
    client cannot configure a provider. Shell out to `rocky auth` first; a Rocky-owned auth surface in the
    contract is the real answer.
-2. **Model switcher UI** ([#21](https://github.com/jakeryderv/rocky/issues/21)). `set_model` and `get_available_models` are already in the contract with no UI on
-   top of them.
-3. **Session list, resume, and new session** ([#22](https://github.com/jakeryderv/rocky/issues/22)). Needs `switch_session`, `new_session`, `get_entries`, and
+2. **Session list, resume, and new session** ([#22](https://github.com/jakeryderv/rocky/issues/22)). Needs `switch_session`, `new_session`, `get_entries`, and
    `get_tree` added to the contract.
-4. **Multi-line input editing** ([#23](https://github.com/jakeryderv/rocky/issues/23)). Today a pasted block is held aside rather than editable.
+3. **Multi-line input editing** ([#23](https://github.com/jakeryderv/rocky/issues/23)). Today a pasted block is held aside rather than editable.
 
 Then, needed but not blocking: bash passthrough ([#24](https://github.com/jakeryderv/rocky/issues/24));
 compaction and steering/follow-up queue UI over

@@ -2,6 +2,20 @@
 
 ## Unreleased
 
+- **The client can switch models.** `set_model` and `get_available_models` were in the contract with nothing
+  on top of them, and the client host never supplied a model catalog at all — so `get_available_models`
+  returned an empty list and `set_model` always failed. The host now reads
+  `modelRuntime.getAvailableSnapshot()`, the same source the harness's own RPC mode uses for both listing and
+  resolving, so the two front ends cannot disagree about which models exist. `/model` opens a picker: the
+  input becomes a filter over `provider/id` and the display name, ↑↓ moves, Enter selects, ctrl+c closes.
+  Ctrl+C closing the overlay takes precedence over abort-or-quit, because Escape never reaches the client's
+  key handler and there would otherwise be no way out but to pick something.
+
+- **The client now has commands of its own.** The core deliberately omits its built-in commands from
+  `get_commands` — they are `pi-tui` screens the client cannot run — so `/model` is the client's to implement
+  and to offer. Client commands are merged ahead of the core's in completion and cannot be shadowed by a
+  project command, so `/model` does not mean different things in different directories.
+
 - **The client can discover slash commands.** `get_commands` existed in the harness RPC protocol but not in
   Rocky's contract, so the client had no way to know a project defined `/review`, a prompt template, or a
   skill. The contract gains `get_commands` and a `SlashCommand` shape, and the client offers a completion

@@ -6,7 +6,7 @@
  * without a model call.
  */
 
-import type { SessionCommand, SessionPort, SessionState, SlashCommand } from "@rocky/contract";
+import type { ModelRef, SessionCommand, SessionPort, SessionState, SlashCommand } from "@rocky/contract";
 import { createSignal } from "solid-js";
 import { applyEvent, emptyTranscript, type TranscriptState } from "./model/transcript.js";
 
@@ -15,6 +15,10 @@ export interface SessionStore {
   state: () => SessionState | undefined;
   /** `/name` commands the core can run. Empty until the first load resolves. */
   commands: () => readonly SlashCommand[];
+  /** Models the session can switch to. Loaded on demand, not at startup. */
+  models: () => readonly ModelRef[];
+  loadModels: () => Promise<void>;
+  setModel: (model: ModelRef) => Promise<void>;
   submit: (text: string) => Promise<void>;
   abort: () => Promise<void>;
   dispose: () => void;
@@ -24,6 +28,7 @@ export function createSessionStore(port: SessionPort): SessionStore {
   const [transcript, setTranscript] = createSignal<TranscriptState>(emptyTranscript());
   const [state, setState] = createSignal<SessionState | undefined>(undefined);
   const [commands, setCommands] = createSignal<readonly SlashCommand[]>([]);
+  const [models, setModels] = createSignal<readonly ModelRef[]>([]);
 
   // State arrives as a push. The one `get_state` below is the cold-start
   // snapshot only: without it a client that connects mid-session would render
@@ -58,6 +63,17 @@ export function createSessionStore(port: SessionPort): SessionStore {
   void loadInitialState();
   void loadCommands();
 
+  // On demand rather than at startup: the catalog costs a provider-availability
+  // snapshot, and most sessions never open the picker.
+  const loadModels = async () => {
+    const result = await port.execute({ type: "get_available_models" });
+    if (result.ok && result.command === "get_available_models") {
+      setModels(result.models);
+    } else if (!result.ok) {
+      setTranscript((current) => ({ ...current, error: result.error }));
+    }
+  };
+
   const send = async (command: SessionCommand) => {
     const result = await port.execute(command);
     if (!result.ok) {
@@ -69,6 +85,9 @@ export function createSessionStore(port: SessionPort): SessionStore {
     transcript,
     state,
     commands,
+    models,
+    loadModels,
+    setModel: (model: ModelRef) => send({ type: "set_model", provider: model.provider, modelId: model.id }),
     submit: (text: string) => send({ type: "prompt", text }),
     abort: () => send({ type: "abort" }),
     dispose: () => unsubscribe(),

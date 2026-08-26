@@ -6,8 +6,9 @@
  */
 import type { InputRenderable, MouseEvent, ScrollBoxRenderable } from "@opentui/core";
 import { useKeyboard, usePaste, useRenderer } from "@opentui/solid";
-import type { SessionPort } from "@rocky/contract";
+import type { ModelRef, SessionPort } from "@rocky/contract";
 import { createEffect, createMemo, createSignal, For, Show } from "solid-js";
+import { mergeCommands, routeSubmission } from "./model/commands.js";
 import {
   applyCompletion,
   clampSelection,
@@ -17,6 +18,7 @@ import {
   moveSelection,
 } from "./model/completion.js";
 import { emptyHistory, newer, older, remember } from "./model/history.js";
+import { filterModels, isActiveModel, modelLabel } from "./model/picker.js";
 import { entryLines } from "./model/transcript.js";
 import { createSessionStore } from "./session-store.js";
 
@@ -29,6 +31,10 @@ export function App(props: { port: SessionPort; onQuit?: (() => void) | undefine
   const [pending, setPending] = createSignal<string[]>([]);
   const [draft, setDraft] = createSignal("");
   const [selected, setSelected] = createSignal(0);
+  // The only overlay today. A union keeps the next one (sessions, settings)
+  // from needing a second boolean that can disagree with this one.
+  const [overlay, setOverlay] = createSignal<"model" | undefined>(undefined);
+  const [picked, setPicked] = createSignal(0);
   let scroller: ScrollBoxRenderable | undefined;
   let input: InputRenderable | undefined;
   const renderer = useRenderer();
@@ -55,12 +61,41 @@ export function App(props: { port: SessionPort; onQuit?: (() => void) | undefine
    * Empty whenever completion does not apply, which is also what "the popup is
    * closed" means — there is no separate open/closed flag to keep in sync.
    */
+  const commands = createMemo(() => mergeCommands(store.commands()));
+
   const suggestions = createMemo(() => {
+    if (overlay() !== undefined) {
+      return [];
+    }
     const query = completionQuery(draft());
-    return query === undefined ? [] : filterCommands(store.commands(), query);
+    return query === undefined ? [] : filterCommands(commands(), query);
   });
 
   createEffect(() => setSelected((current) => clampSelection(current, suggestions().length)));
+
+  /** While the picker is open the input is its filter, not a prompt. */
+  const pickerModels = createMemo(() => (overlay() === "model" ? filterModels(store.models(), draft()) : []));
+
+  createEffect(() => setPicked((current) => clampSelection(current, pickerModels().length)));
+
+  const openModelPicker = () => {
+    showInInput("");
+    setPicked(0);
+    setOverlay("model");
+    void store.loadModels();
+  };
+
+  const closeOverlay = () => {
+    setOverlay(undefined);
+    showInInput("");
+  };
+
+  const chooseModel = (model: ModelRef | undefined) => {
+    if (model) {
+      void store.setModel(model);
+    }
+    closeOverlay();
+  };
 
   const acceptCompletion = () => {
     const command = suggestions()[selected()];
@@ -72,11 +107,27 @@ export function App(props: { port: SessionPort; onQuit?: (() => void) | undefine
   };
 
   const submit = (value: string) => {
+    if (overlay() === "model") {
+      chooseModel(pickerModels()[picked()]);
+      return;
+    }
     // A multi-line paste is held aside and prepended on submit, because the
     // single-line input cannot represent the newlines itself.
     const held = pending();
     const text = held.length > 0 ? [...held, value].join("\n") : value;
     if (text.trim().length === 0) {
+      return;
+    }
+    const route = routeSubmission(text, commands());
+    if (route.kind === "client") {
+      // A client command never reaches the core, but it is still history: the
+      // user typed it, and ↑ has to bring it back like anything else.
+      setPending([]);
+      setHistory((current) => remember(current, text));
+      showInInput("");
+      if (route.name === "model") {
+        openModelPicker();
+      }
       return;
     }
     setPending([]);
@@ -126,6 +177,13 @@ export function App(props: { port: SessionPort; onQuit?: (() => void) | undefine
     // (the key parser swallows it as an escape-sequence prefix), so a binding
     // on it would be silently dead.
     if (key.name === "c" && key.ctrl) {
+      // Closing the overlay comes first. Escape never reaches this handler, so
+      // without this precedence the only way out of the picker would be to
+      // pick something — or to quit.
+      if (overlay() !== undefined) {
+        closeOverlay();
+        return;
+      }
       if (store.transcript().streaming) {
         void store.abort();
       } else {
@@ -141,6 +199,10 @@ export function App(props: { port: SessionPort; onQuit?: (() => void) | undefine
       return;
     }
     if (key.name === "up" || key.name === "down") {
+      if (overlay() === "model") {
+        setPicked((current) => moveSelection(current, pickerModels().length, key.name === "up" ? -1 : 1));
+        return;
+      }
       // While the popup is open the arrows drive it, not prompt history.
       if (suggestions().length > 0) {
         setSelected((current) => moveSelection(current, suggestions().length, key.name === "up" ? -1 : 1));
@@ -159,7 +221,7 @@ export function App(props: { port: SessionPort; onQuit?: (() => void) | undefine
     const state = store.state();
     const usage = store.transcript().usage;
     const parts = [
-      state?.model ? `${state.model.provider}/${state.model.id}` : "no model",
+      state?.model ? modelLabel(state.model) : "no model",
       state?.thinkingLevel ?? "-",
       store.transcript().streaming ? "streaming" : "idle",
     ];
@@ -234,6 +296,29 @@ export function App(props: { port: SessionPort; onQuit?: (() => void) | undefine
         {status()}
       </text>
 
+      <Show when={overlay() === "model"}>
+        <box style={{ flexDirection: "column", flexShrink: 0 }}>
+          <text fg="#888888">Select a model ↑↓ · enter selects · ctrl+c closes</text>
+          <Show
+            when={pickerModels().length > 0}
+            fallback={
+              <text fg="#888888"> {store.models().length === 0 ? "no models available" : "no match"}</text>
+            }
+          >
+            <For each={pickerModels()}>
+              {(model, index) => (
+                <text fg={index() === picked() ? "#ffffff" : "#888888"}>
+                  {index() === picked() ? "› " : "  "}
+                  {isActiveModel(model, store.state()?.model) ? "* " : ""}
+                  {modelLabel(model)}
+                  {model.displayName ? ` — ${model.displayName}` : ""}
+                </text>
+              )}
+            </For>
+          </Show>
+        </box>
+      </Show>
+
       <Show when={suggestions().length > 0}>
         <box style={{ flexDirection: "column", flexShrink: 0 }}>
           <For each={suggestions()}>
@@ -259,7 +344,11 @@ export function App(props: { port: SessionPort; onQuit?: (() => void) | undefine
           input = element;
         }}
         focused
-        placeholder="Ask Rocky…   / commands · ↑ history · ctrl+c aborts, or quits when idle"
+        placeholder={
+          overlay() === "model"
+            ? "Filter models…"
+            : "Ask Rocky…   / commands · ↑ history · ctrl+c aborts, or quits when idle"
+        }
         style={{ flexShrink: 0 }}
         on:input={(value: string) => setDraft(value)}
         on:enter={(value: string) => submit(value)}

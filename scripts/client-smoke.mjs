@@ -25,8 +25,17 @@ const port = {
       listener = undefined;
     };
   },
-  execute: async (command) =>
-    command.type === "get_state"
+  execute: async (command) => {
+    // The data-bearing commands have to be answered for real. A result that
+    // claims `ok` while omitting its payload is not a shape the contract
+    // permits, and the client is entitled to read the payload without guarding.
+    if (command.type === "get_commands") {
+      return { type: "command_result", command: "get_commands", ok: true, commands: [] };
+    }
+    if (command.type === "get_available_models") {
+      return { type: "command_result", command: "get_available_models", ok: true, models: [] };
+    }
+    return command.type === "get_state"
       ? {
           type: "command_result",
           command: "get_state",
@@ -45,7 +54,8 @@ const port = {
             pendingMessageCount: 0,
           },
         }
-      : { type: "command_result", command: command.type, ok: true },
+      : { type: "command_result", command: command.type, ok: true };
+  },
 };
 
 const t = await testRender(() => App({ port }), { width: 70, height: 12 });
