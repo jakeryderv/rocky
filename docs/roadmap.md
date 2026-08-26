@@ -1,6 +1,6 @@
 # Roadmap and carried debt
 
-Status snapshot as of 2026-08-22 (post ADR 0003 fork integration). Decisions live in
+Status snapshot as of 2026-08-25 (contract slice landed; see ADR 0004). Decisions live in
 [`docs/decisions/`](decisions/); this file tracks sequencing and known debt. Update it when items land or
 priorities change.
 
@@ -11,34 +11,52 @@ priorities change.
 - `packages/harness`: source fork of `pi-coding-agent` v0.84.2, standalone, Rocky-branded, self-update and
   managed downloads removed, undici gated under Bun; fork suite green (1853 passed / 49 skipped).
 - Root CLI runs on the fork; `PI_PACKAGE_DIR` bridge and all runtime-rewriting workarounds deleted.
+- **Live provider streaming verified under Bun** (ADR 0003's outstanding verification debt). Print mode, the
+  JSON event stream, mid-stream SIGINT abort, and RPC steer all behave identically under Node 24 and Bun
+  1.4.0 against a live `openai-codex` provider; streamed content matched exactly.
+- **Session-file creation bug fixed.** Rocky's private-storage extension pre-created the session file, so the
+  harness's exclusive-create (`wx`) flush failed with `EEXIST` on the first assistant message — every model
+  turn crashed. Privacy now lives in the harness at the point of creation; the extension only covers
+  directories and pre-existing files.
+- **Harness test isolation.** The suite writes to a per-run temporary agent directory instead of the
+  developer's real `~/.rocky/agent`, and strips inherited credential/cloud/proxy state like the root suite.
+- **Rocky contract, first slice** (`src/contract/`) with `PiAgentSessionAdapter` (`src/adapter/`), derived
+  from the harness RPC protocol rather than designed greenfield (ADR 0004). Isolation and JSON /
+  `structuredClone` round-trips are enforced by tests.
 
 ## Next (in order)
 
-1. **Rocky contract** — headless, client-agnostic session contract (serializable commands/events/state, no
-   Pi types leaking) with a `PiAgentSessionAdapter` over the fork's `AgentSession`. Enforce mechanically:
-   contract modules import nothing from `@earendil-works/*`; fixtures survive JSON/`structuredClone`
-   round-trips in tests.
-2. **OpenTUI + Solid client on Bun** — the first Rocky-owned TUI, consuming only the contract. Keep the
-   inherited `InteractiveMode` reachable (e.g. `rocky --classic`) until the new client covers daily use, then
-   delete `modes/interactive` from the fork and drop the `pi-tui` dependency.
-3. **Bun toolchain migration** — move install/lockfile/CI/bin to Bun once the client work makes Bun the
+1. **OpenTUI + Solid client on Bun, with the contract** — the first Rocky-owned TUI, consuming only the
+   contract, built as a vertical slice so the client's real needs drive what the contract grows (ADR 0004).
+   Promote further RPC-protocol surfaces (session fork/clone/switch, bash execution, extension UI, slash
+   commands) into the contract as the client consumes them. Keep the inherited `InteractiveMode` reachable
+   (e.g. `rocky --classic`) until the new client covers daily use, then delete `modes/interactive` from the
+   fork and drop the `pi-tui` dependency.
+2. **Bun toolchain migration** — move install/lockfile/CI/bin to Bun once the client work makes Bun the
    actual runtime (`bun install`, lockfile pinning discipline equivalent to npm-shrinkwrap, CI image, test
    runner decision for root vs harness suites).
-4. **Longer term** — see [`project-idea-outline.md`](project-idea-outline.md): multi-subagent experimentation
+3. **Longer term** — see [`project-idea-outline.md`](project-idea-outline.md): multi-subagent experimentation
    (isolated workspaces, pinned factors, repeatable scoring) once baseline behavior is stable; a process/RPC
    boundary only when a concrete need appears (web client, remote execution, daemon, sandbox isolation).
 
 ## Carried debt
 
-- **Live provider streaming under Bun is unverified** — no provider credentials were configured at spike
-  time. Before Bun becomes the shipped default runtime: `/login`, then run one `--print` prompt and an
-  abort/steer under `bun`, including the pi-ai SSE path. (ADR 0003 flags this as verification debt.)
+- **Undici dispatcher settings do not apply under Bun.** `configureHttpDispatcher()` returns early when
+  `process.versions.bun` is set, so the socket-level HTTP idle timeout and undici's `EnvHttpProxyAgent` are
+  not installed. Per-request timeouts still reach the provider SDK through `sdk.ts`, and Bun's native fetch
+  reads `HTTP(S)_PROXY` itself, so the practical gap is narrow — but proxied requests under Bun have not been
+  exercised. Revisit when Bun becomes the default runtime.
+- **Model calls are unreachable from the test suite by policy**, which is what let the `EEXIST` session-flush
+  bug reach every turn undetected: no test may make a model call, and nothing else creates a session file.
+  The contract adapter narrows this (its mapping functions are pure and fully tested), but a scripted live
+  smoke against a real provider remains manual.
 - **3 harness test files excluded** (`custom-editor-history-keybindings`, `interactive-tui`,
   `interactive-mode-status`): they import pi-tui's `VirtualTerminal`/`test-themes` helpers, which the npm
   package does not ship. Vendor those helpers into `packages/harness/test/` to recover them — or drop the
   tests with `modes/interactive` when the OpenTUI client replaces the inherited TUI.
 - **Toolchain still npm/Node** — intentional until step 3; the `rocky` bin shebang is `node`, CI runs Node 24.
-  Bun-run is validated by smoke but not the default.
+  Bun-run is validated by smoke, by the live streaming/abort/steer checks, and by a live contract round-trip,
+  but is not the default.
 - **Harness `docs/` and `examples/` are upstream's** — still pi-worded; functionally accurate for inherited
   behavior (the system prompt points the model at them for app questions). Reword or replace incrementally as
   the corresponding behavior becomes Rocky-owned.

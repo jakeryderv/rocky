@@ -12,6 +12,8 @@ when network access is appropriate.
   0003). It is Rocky-owned code: edit it directly, but keep diffs minimal and reviewable against the pristine
   vendor commit, match its upstream style (tabs; excluded from root Biome), and keep its test suite green.
 - `src/` — the `rocky` CLI and Rocky policy composition over the harness.
+- `src/contract/` — the client-agnostic session contract (ADR 0004). It must import nothing outside itself:
+  no `@earendil-works/*`, no harness, no other Rocky module. Translation belongs in `src/adapter/`.
 - `docs/decisions/` — ADRs; `docs/roadmap.md` — sequencing and carried debt.
 
 ## Invariants
@@ -25,7 +27,10 @@ when network access is appropriate.
 - Required tests and CI must strip inherited provider/cloud/proxy/credential-helper state, must not use real
   provider credentials, and must not make model calls.
 - Preserve private POSIX agent/session permissions and the system-only `fd`/`rg` policy; the harness must
-  never download executables.
+  never download executables. Session files are created owner-only by the harness itself — never pre-create a
+  session file from Rocky policy code, because the harness flushes it with an exclusive-create.
+- Tests must not write to the developer's real `~/.rocky/agent`; both suites redirect the agent directory and
+  strip inherited credential state. `packages/harness/test/test-environment-isolation.test.ts` guards this.
 - No self-update and no startup version check in the harness; `update --extensions`/`--models` stay.
 - Do not store credentials, sessions, trust decisions, logs, provider payloads, or model output in `.rocky`.
 - Do not commit generated `dist`, coverage, or reports. Keep `npm-shrinkwrap.json` current.

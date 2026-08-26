@@ -53,5 +53,9 @@ upstream harness updates; upstream fixes are cherry-picked by hand when wanted. 
 continues to arrive through pinned upstream `pi-ai` upgrades. The vendored fork is committed pristine first,
 then modified, so Rocky's divergence from `v0.84.2` stays reviewable as history. Extension virtual imports keep
 the `@earendil-works/pi-coding-agent` specifier for compatibility until a Rocky-named alias is decided.
-Remaining verification debt: live provider streaming under Bun must be exercised once credentials are
-configured, before the Bun runtime ships as the default.
+Verification debt closed on 2026-08-25 against a live `openai-codex` provider: print mode, the JSON event
+stream (incremental SSE deltas), mid-stream SIGINT abort, and RPC steer all behave identically under Node 24
+and Bun 1.4.0, with matching streamed content. One delta stands: `configureHttpDispatcher()` returns early
+under Bun, so the socket-level HTTP idle timeout and undici's `EnvHttpProxyAgent` are not installed —
+per-request timeouts still reach the provider SDK via `sdk.ts`, and Bun's native fetch reads `HTTP(S)_PROXY`
+itself, but proxied requests under Bun remain unexercised. See [`roadmap.md`](../roadmap.md).

@@ -2,6 +2,21 @@
 
 ## Unreleased
 
+- **Fix: every model turn crashed with `EEXIST`.** Rocky's private-storage extension pre-created the session
+  file, so the harness's exclusive-create flush failed on the first assistant message. Session privacy is now
+  enforced by the harness at the point of creation (`0600` files, `0700` directories, re-applied after the
+  umask mask); the extension covers directories and pre-existing files only. No test caught this because the
+  suite may not make model calls.
+- Add `src/contract/`, Rocky's client-agnostic session contract (serializable commands, events, and state
+  with no harness or Pi types), and `src/adapter/` with `PiAgentSessionAdapter` over the harness
+  `AgentSession`. Derived from the harness RPC protocol rather than designed greenfield; isolation and
+  JSON/`structuredClone` round-trips are enforced by tests. See ADR 0004.
+- Verify live provider streaming, mid-stream abort, and steer under Bun 1.4.0 — identical to Node 24. Closes
+  ADR 0003's verification debt.
+- Isolate the harness test suite: a per-run temporary agent directory instead of the developer's real
+  `~/.rocky/agent` (the suite was leaving ~21 session directories behind per run), plus credential/cloud/proxy
+  env stripping to match the root suite.
+
 - Fork `@earendil-works/pi-coding-agent` v0.84.2 as `packages/harness` (`@jakeryderv/rocky-harness`) and run
   the CLI on it; the `PI_PACKAGE_DIR` bridge, runtime help rewriting, and self-update interception are gone.
   Provider/model layers stay on exactly pinned upstream Pi packages. See ADR 0003.
