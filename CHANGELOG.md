@@ -2,6 +2,26 @@
 
 ## Unreleased
 
+- **The repository's agent guide now actually reaches Claude Code.** `AGENTS.md` held the invariants, the
+  layout, and the fork boundary — and was never loaded, because Claude Code reads `CLAUDE.md` and the project
+  had neither that nor a `.claude/` directory. A session therefore rediscovered the architecture from source
+  every time. `CLAUDE.md` is now a symlink to `AGENTS.md`, so there is still one file to maintain; Pi's own
+  context discovery takes the first match per directory (`core/resource-loader.ts:70`), so the pair never
+  loads twice.
+
+- **`AGENTS.md` gained the orientation that was expensive to rediscover**: which Pi packages are forked versus
+  depended on and why, the measured size of the fork's divergence from upstream, and the fact that `rocky` and
+  `npm run client` are two front ends that diverge only above `createAgentSessionServices`. It also states
+  where fanning out to subagents pays here — investigation and review — and where it does not: the client is
+  three files, so parallel edits collide rather than parallelize.
+
+- **Editing on `main` is now refused**, by a `PreToolUse` hook in `.claude/`. `main` rejects direct pushes, so
+  work started there has to be moved to a branch regardless; failing at the edit is cheaper than failing at
+  the push. The hook ignores paths outside the repository.
+
+- **`/ship`** runs the branch-to-merged sequence in one command: paper-trail check, both gates, push, PR from
+  the template with real Pass/Fail/Skip counts, CI wait, squash-merge, and sync.
+
 - **Repository workflow defined and enforced.** `main` now requires both CI jobs green and rejects
   force-pushes and deletion, so work goes through a branch and a PR; before this, a red `main` was one
   `git push` away and nothing prevented it. `.githooks/pre-push` runs the same gates locally (enable once
