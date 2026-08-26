@@ -7,7 +7,7 @@ rocky executable (src/cli.ts)
   -> src/runtime/pi-runtime.ts (composition boundary)
      -> @jakeryderv/rocky-harness (packages/harness — forked harness, piConfig name=rocky, configDir=.rocky)
         -> harness session/runtime services, InteractiveMode
-        -> exactly pinned upstream @earendil-works/pi-ai, pi-agent-core, pi-tui, pi-client, pi-protocol
+        -> exactly pinned upstream @earendil-works/pi-ai, pi-agent-core, pi-tui
 
 packages/client (OpenTUI + Solid, Bun-only; also web/remote later)
   -> src/contract/ (serializable commands/events/state + SessionPort; no harness or Pi types)
@@ -32,9 +32,13 @@ undici global-fetch installation is skipped in favor of native fetch. Extension 
 `@jakeryderv/rocky-harness` and the upstream specifiers.
 
 Depended on, exactly pinned, not forked: `pi-ai` (providers/models/auth churn tracked upstream),
-`pi-agent-core` (agent loop), `pi-tui` (until the Rocky client replaces the inherited TUI), `pi-client`,
-`pi-protocol`. Escalation ladder per package: depend, wrap through the Rocky boundary, vendor only when
+`pi-agent-core` (agent loop and core tool primitives), `pi-tui` (until the Rocky client replaces the
+inherited TUI). Escalation ladder per package: depend, wrap through the Rocky boundary, vendor only when
 wrapping cannot express a needed change (ADR 0003).
+
+Dropped from the fork: `pi-client` and `pi-protocol`, together with the harness's `src/client/` remote-session
+surface and its `./client` export. That code served pi.dev-hosted sessions, nothing in Rocky imported it, and
+it was the one remaining dependency on the Pi ecosystem's wire protocol rather than on its engine.
 
 ## Session contract
 

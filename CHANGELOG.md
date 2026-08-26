@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+- **Dropped `pi-client` and `pi-protocol`.** The harness's `src/client/` remote-session surface — a
+  `RemoteSession` over pi.dev's wire protocol, plus its transcript reducer and the `./client` package export —
+  was dead code: nothing in Rocky imported it, and the experimental `client`/`server` CLI commands that would
+  have driven it parse arguments into a context whose `runClient`/`runServer` hooks are never implemented.
+  Deleting it removes Rocky's last dependency on the Pi *ecosystem* (its wire protocol) as opposed to the Pi
+  *engine* (`pi-ai`, `pi-agent-core`, `pi-tui`). 8 files and 23 tests removed; harness suite 1830 passed / 49
+  skipped.
+
 - **Fix: the client rendered nothing.** `render()` resolves when the app is mounted, not when the TUI exits,
   so the host's `finally` disposed the session immediately: the UI kept running and accepting input, prompts
   still returned `ok: true`, and no event ever reached the transcript again. `mountRockyClient` now stays
