@@ -22,31 +22,30 @@ export function createSessionStore(port: SessionPort): SessionStore {
   const [transcript, setTranscript] = createSignal<TranscriptState>(emptyTranscript());
   const [state, setState] = createSignal<SessionState | undefined>(undefined);
 
-  // `state_changed` is declared in the contract but not yet emitted, so the
-  // status line is refreshed after each event. Cheap in-process; this becomes a
-  // subscription the moment the core pushes state.
-  const refreshState = async () => {
+  // State arrives as a push. The one `get_state` below is the cold-start
+  // snapshot only: without it a client that connects mid-session would render
+  // an empty status line until something happened to change state.
+  const loadInitialState = async () => {
     const result = await port.execute({ type: "get_state" });
     if (result.ok && result.command === "get_state") {
-      setState(result.state);
+      setState((current) => current ?? result.state);
     }
   };
 
   const unsubscribe = port.subscribe((event) => {
     setTranscript((current) => applyEvent(current, event));
-    if (event.type === "turn_start" || event.type === "turn_end" || event.type === "settled") {
-      void refreshState();
+    if (event.type === "state_changed") {
+      setState(event.state);
     }
   });
 
-  void refreshState();
+  void loadInitialState();
 
   const send = async (command: SessionCommand) => {
     const result = await port.execute(command);
     if (!result.ok) {
       setTranscript((current) => ({ ...current, error: result.error }));
     }
-    await refreshState();
   };
 
   return {

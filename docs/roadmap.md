@@ -43,6 +43,9 @@ other 19 live in `core/` and `cli/` and need real work (see phase C).
 - **First OpenTUI + Solid client slice** (`packages/client`) over a `SessionPort`, with a headless Bun render
   suite, a root-level client smoke, and a separate Bun CI job. See ADR 0005. Scrollback, incremental tool
   output, a working quit path, prompt history, and multi-line paste have since landed.
+- **`state_changed` is a push** ([#25](https://github.com/jakeryderv/rocky/issues/25)). The adapter emits it
+  whenever its projected state differs, so the client no longer re-reads `get_state` on turn boundaries and
+  after every command. One cold-start `get_state` remains.
 - **`pi-client` and `pi-protocol` dropped** with the harness's dead `src/client/` remote-session surface —
   the last dependency on the Pi *ecosystem's* wire protocol rather than on its engine.
 
@@ -68,8 +71,7 @@ with it.
 5. **Multi-line input editing** ([#23](https://github.com/jakeryderv/rocky/issues/23)). Today a pasted block is held aside rather than editable.
 
 Then, needed but not blocking: bash passthrough ([#24](https://github.com/jakeryderv/rocky/issues/24));
-`state_changed` as a push so the store can stop refreshing state on turn boundaries
-([#25](https://github.com/jakeryderv/rocky/issues/25)); compaction and steering/follow-up queue UI over
+compaction and steering/follow-up queue UI over
 commands the contract already has ([#26](https://github.com/jakeryderv/rocky/issues/26)); settings, theme,
 and keybinding screens ([#27](https://github.com/jakeryderv/rocky/issues/27)); `export_html`, `fork`,
 `clone`, and session stats ([#28](https://github.com/jakeryderv/rocky/issues/28)).

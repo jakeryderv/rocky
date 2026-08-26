@@ -65,6 +65,16 @@ export class PiAgentSessionAdapter {
   private readonly options: PiAgentSessionAdapterOptions;
   private readonly listeners = new Set<(value: SessionEvent) => void>();
   private unsubscribe: (() => void) | undefined;
+  /**
+   * Serialized last-published state, used to suppress no-op `state_changed`.
+   *
+   * The harness has no single "state changed" signal: state moves both through
+   * session events and through synchronous setters that emit nothing at all
+   * (`setThinkingLevel`, `setSteeringMode`, …). Diffing one projection after
+   * every one of those paths is what makes the push complete, and comparing it
+   * is what keeps a streaming turn from pushing an identical snapshot per delta.
+   */
+  private lastStateJson: string | undefined;
 
   constructor(session: AgentSessionLike, options: PiAgentSessionAdapterOptions) {
     this.session = session;
@@ -73,18 +83,27 @@ export class PiAgentSessionAdapter {
 
   /** Begin translating session events. Returns a disposer. */
   start(): () => void {
-    this.unsubscribe ??= this.session.subscribe((event) => {
-      const mapped = toSessionEvent(event as never);
-      if (mapped) {
-        this.emit(mapped);
-      }
-    });
+    if (this.unsubscribe === undefined) {
+      // Seed the baseline before any event can arrive, so the first push
+      // reflects a real change rather than the session's opening state.
+      this.lastStateJson = JSON.stringify(this.getState());
+      this.unsubscribe = this.session.subscribe((event) => {
+        const mapped = toSessionEvent(event as never);
+        if (mapped) {
+          this.emit(mapped);
+        }
+        // Unmapped harness events still move state, so this runs for every
+        // event, not only translated ones.
+        this.publishStateIfChanged();
+      });
+    }
     return () => this.dispose();
   }
 
   dispose(): void {
     this.unsubscribe?.();
     this.unsubscribe = undefined;
+    this.lastStateJson = undefined;
     this.listeners.clear();
   }
 
@@ -97,6 +116,25 @@ export class PiAgentSessionAdapter {
     for (const listener of this.listeners) {
       listener(event);
     }
+  }
+
+  /**
+   * Push `state_changed` when the projected state actually differs.
+   *
+   * Ordered after the event that caused the change so a client applies the
+   * transcript update and the state update in the order they happened.
+   */
+  private publishStateIfChanged(): void {
+    if (this.unsubscribe === undefined) {
+      return;
+    }
+    const state = this.getState();
+    const json = JSON.stringify(state);
+    if (json === this.lastStateJson) {
+      return;
+    }
+    this.lastStateJson = json;
+    this.emit({ type: "state_changed", state });
   }
 
   getState(): SessionState {
@@ -142,8 +180,17 @@ export class PiAgentSessionAdapter {
    *
    * Never throws: failures come back as `ok: false` results so a transport can
    * forward them verbatim and a client has exactly one error path.
+   *
+   * Publishes `state_changed` before resolving, because several commands mutate
+   * state through synchronous setters the harness reports no event for.
    */
   async execute(command: SessionCommand): Promise<CommandResult> {
+    const result = await this.runCommand(command);
+    this.publishStateIfChanged();
+    return result;
+  }
+
+  private async runCommand(command: SessionCommand): Promise<CommandResult> {
     const id = command.id;
     try {
       switch (command.type) {
