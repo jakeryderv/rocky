@@ -81,3 +81,34 @@ export function statsLine(stats: {
   }
   return parts.join("  ·  ");
 }
+
+/** Generic name filter, for the pickers whose rows are just names. */
+export function filterNames(names: readonly string[], query: string): string[] {
+  const needle = query.trim().toLowerCase();
+  return needle.length === 0 ? [...names] : names.filter((name) => name.toLowerCase().includes(needle));
+}
+
+/** The session settings a client can see, as label/value rows. */
+export function settingsRows(state: {
+  cwd: string;
+  sessionId: string;
+  sessionName?: string;
+  sessionFile?: string;
+  model?: { provider: string; id: string };
+  thinkingLevel: string;
+  steeringMode: string;
+  followUpMode: string;
+  autoCompactionEnabled: boolean;
+}): { label: string; value: string; command?: string }[] {
+  return [
+    { label: "model", value: state.model ? modelLabel(state.model) : "none", command: "/model" },
+    { label: "thinking", value: state.thinkingLevel, command: "/thinking" },
+    { label: "auto-compact", value: state.autoCompactionEnabled ? "on" : "off", command: "/autocompact" },
+    { label: "steering", value: state.steeringMode, command: "/steering" },
+    { label: "follow-up", value: state.followUpMode, command: "/followup" },
+    { label: "name", value: state.sessionName ?? "unnamed", command: "/name" },
+    { label: "session", value: state.sessionId },
+    { label: "directory", value: state.cwd },
+    ...(state.sessionFile ? [{ label: "transcript", value: state.sessionFile }] : []),
+  ];
+}

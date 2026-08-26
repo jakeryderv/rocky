@@ -192,6 +192,24 @@ export interface BashResult {
 }
 
 // ============================================================================
+// Theme
+// ============================================================================
+
+/**
+ * A colour theme, resolved to values a client can paint with.
+ *
+ * The keys are the core's own semantic names (`text`, `muted`, `error`, …),
+ * passed through rather than renamed: the core owns the vocabulary, themes are
+ * shared with the CLI, and a client that does not recognize a key can ignore
+ * it. A client must therefore treat every key as optional and carry its own
+ * fallbacks — a user-authored theme need not define them all.
+ */
+export interface ThemeSnapshot {
+  name: string;
+  colors: Record<string, string>;
+}
+
+// ============================================================================
 // Sessions
 // ============================================================================
 
@@ -366,6 +384,9 @@ export type SessionCommand =
    * that is harder to update incrementally.
    */
   | { id?: string | undefined; type: "get_entries"; since?: string }
+  | { id?: string | undefined; type: "get_themes" }
+  | { id?: string | undefined; type: "get_theme" }
+  | { id?: string | undefined; type: "set_theme"; name: string }
   | { id?: string | undefined; type: "set_thinking_level"; level: ThinkingLevel }
   | { id?: string | undefined; type: "set_steering_mode"; mode: QueueMode }
   | { id?: string | undefined; type: "set_follow_up_mode"; mode: QueueMode }
@@ -441,6 +462,15 @@ export type CommandResult =
   | {
       type: "command_result";
       id?: string | undefined;
+      command: "get_themes";
+      ok: true;
+      themes: string[];
+      active: string;
+    }
+  | { type: "command_result"; id?: string | undefined; command: "get_theme"; ok: true; theme: ThemeSnapshot }
+  | {
+      type: "command_result";
+      id?: string | undefined;
       command: "get_entries";
       ok: true;
       entries: SessionEntrySummary[];
@@ -472,6 +502,8 @@ export type CommandResult =
         | "get_fork_points"
         | "get_session_stats"
         | "get_entries"
+        | "get_themes"
+        | "get_theme"
       >;
       ok: true;
     }
@@ -561,6 +593,8 @@ export type SessionEvent =
    * also be switched by an extension, with no command to attribute it to.
    */
   | { type: "session_switched"; state: SessionState }
+  /** The active theme changed, here or in another client sharing the setting. */
+  | { type: "theme_changed"; theme: ThemeSnapshot }
   | { type: "state_changed"; state: SessionState }
   | { type: "session_name_changed"; name?: string }
   | { type: "error"; message: string }

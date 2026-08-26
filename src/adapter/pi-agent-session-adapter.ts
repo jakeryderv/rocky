@@ -17,6 +17,7 @@ import type {
   SessionState,
   SessionSummary,
   SlashCommand,
+  ThemeSnapshot,
 } from "../contract/index.js";
 import {
   flattenSessionTree,
@@ -107,6 +108,19 @@ export type SlashCommandCatalog = () =>
   | undefined;
 
 /**
+ * Reading and setting the colour theme.
+ *
+ * Supplied by the host because themes are a core setting shared with the CLI,
+ * not something the session object exposes.
+ */
+export interface ThemeCatalog {
+  list(): readonly string[];
+  active(): string;
+  resolve(name?: string): Record<string, string>;
+  set(name: string): void;
+}
+
+/**
  * Listing, resuming and starting sessions.
  *
  * The harness splits this across two objects: `SessionManager` knows what
@@ -130,6 +144,7 @@ export interface PiAgentSessionAdapterOptions {
   listModels?: ModelCatalog;
   listCommands?: SlashCommandCatalog;
   sessions?: SessionLifecycle;
+  themes?: ThemeCatalog;
 }
 
 export class PiAgentSessionAdapter {
@@ -205,6 +220,11 @@ export class PiAgentSessionAdapter {
       this.start();
     }
     this.publishSwitched();
+  }
+
+  private theme(): ThemeSnapshot {
+    const themes = this.options.themes;
+    return { name: themes?.active() ?? "", colors: { ...(themes?.resolve() ?? {}) } };
   }
 
   /** One shape for "this host cannot do that", so a client has one error path. */
@@ -521,6 +541,39 @@ export class PiAgentSessionAdapter {
             entries,
             ...(leafId !== undefined ? { leafId } : {}),
           };
+        }
+        case "get_themes": {
+          const themes = this.options.themes;
+          if (!themes) {
+            return this.unsupported(id, "get_themes", "list themes");
+          }
+          return {
+            type: "command_result",
+            id,
+            command: "get_themes",
+            ok: true,
+            themes: [...themes.list()],
+            active: themes.active(),
+          };
+        }
+        case "get_theme": {
+          const themes = this.options.themes;
+          if (!themes) {
+            return this.unsupported(id, "get_theme", "report its theme");
+          }
+          return { type: "command_result", id, command: "get_theme", ok: true, theme: this.theme() };
+        }
+        case "set_theme": {
+          const themes = this.options.themes;
+          if (!themes) {
+            return this.unsupported(id, "set_theme", "change its theme");
+          }
+          themes.set(command.name);
+          // Pushed as well as acknowledged: the setting is shared with the CLI,
+          // so any client watching the session needs to repaint, not only the
+          // one that asked.
+          this.emit({ type: "theme_changed", theme: this.theme() });
+          return { type: "command_result", id, command: "set_theme", ok: true };
         }
         case "set_model": {
           const model = this.options.lookupModel?.(command.provider, command.modelId);

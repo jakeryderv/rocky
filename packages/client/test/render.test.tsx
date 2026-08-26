@@ -126,6 +126,23 @@ function fakePort() {
           ],
         };
       }
+      if (command.type === "get_theme") {
+        return {
+          type: "command_result",
+          command: "get_theme",
+          ok: true,
+          theme: { name: "dark", colors: {} },
+        };
+      }
+      if (command.type === "get_themes") {
+        return {
+          type: "command_result",
+          command: "get_themes",
+          ok: true,
+          themes: ["dark", "light"],
+          active: "dark",
+        };
+      }
       if (command.type === "get_commands") {
         return {
           type: "command_result",
@@ -1060,4 +1077,81 @@ test("/stats reports what the session has cost", async () => {
   expect(frame).toContain("150 tokens");
   expect(frame).toContain("$0.0042");
   expect(frame).toContain("25%");
+});
+
+test("/settings shows the session's settings and how to change them", async () => {
+  const { port } = fakePort();
+  const t = await testRender(() => <App port={port} />, { width: 70, height: 20 });
+  await t.renderOnce();
+
+  await t.mockInput.typeText("/settings");
+  t.mockInput.pressEnter();
+  await t.renderOnce();
+
+  const frame = t.captureCharFrame();
+  expect(frame).toContain("openai-codex/gpt-5.5");
+  expect(frame).toContain("auto-compact");
+  expect(frame).toContain("/thinking");
+
+  // Read-only: enter dismisses rather than selecting.
+  t.mockInput.pressEnter();
+  await t.renderOnce();
+  expect(t.captureCharFrame()).not.toContain("auto-compact  ");
+});
+
+test("/keys says what the keys do", async () => {
+  const { port } = fakePort();
+  const t = await testRender(() => <App port={port} />, { width: 70, height: 20 });
+  await t.renderOnce();
+
+  await t.mockInput.typeText("/keys");
+  t.mockInput.pressEnter();
+  await t.renderOnce();
+  expect(t.captureCharFrame()).toContain("shift+enter");
+});
+
+test("/theme switches the theme, and the change is pushed back", async () => {
+  const { port, sent, emit } = fakePort();
+  const t = await testRender(() => <App port={port} />, { width: 70, height: 20 });
+  await t.renderOnce();
+
+  await t.mockInput.typeText("/theme");
+  t.mockInput.pressEnter();
+  await t.renderOnce();
+  await t.renderOnce();
+  expect(t.captureCharFrame()).toContain("light");
+
+  t.mockInput.pressArrow("down");
+  await t.renderOnce();
+  t.mockInput.pressEnter();
+  await t.renderOnce();
+
+  expect(sent.filter((command) => command.type === "set_theme")).toEqual([
+    { type: "set_theme", name: "light" },
+  ]);
+
+  // The setting is shared with the CLI, so the repaint arrives as an event.
+  emit({ type: "theme_changed", theme: { name: "light", colors: { muted: "#404040" } } });
+  await t.renderOnce();
+  expect(t.captureCharFrame()).not.toContain("Select a theme");
+});
+
+test("/thinking sets the reasoning level", async () => {
+  const { port, sent } = fakePort();
+  const t = await testRender(() => <App port={port} />, { width: 70, height: 20 });
+  await t.renderOnce();
+
+  await t.mockInput.typeText("/thinking high");
+  t.mockInput.pressEnter();
+  await t.renderOnce();
+  await t.renderOnce();
+  // The argument does not select; the picker opens and the input filters it.
+  await t.mockInput.typeText("high");
+  await t.renderOnce();
+  t.mockInput.pressEnter();
+  await t.renderOnce();
+
+  expect(sent.filter((command) => command.type === "set_thinking_level")).toEqual([
+    { type: "set_thinking_level", level: "high" },
+  ]);
 });

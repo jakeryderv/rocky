@@ -43,6 +43,10 @@ other 19 live in `core/` and `cli/` and need real work (see phase C).
 - **First OpenTUI + Solid client slice** (`packages/client`) over a `SessionPort`, with a headless Bun render
   suite, a root-level client smoke, and a separate Bun CI job. See ADR 0005. Scrollback, incremental tool
   output, a working quit path, prompt history, and multi-line paste have since landed.
+- **Settings, theme, and key help** ([#27](https://github.com/jakeryderv/rocky/issues/27)). `/settings`,
+  `/theme`, `/thinking` and `/keys`, with the client painting from the core's own resolved theme colours so
+  both front ends share one theme choice. Keybindings stay fixed and `/keys` is a help screen: the core's
+  bindings are `pi-tui`-coupled and their replacement is a phase C2 design decision, not a port.
 - **Export, fork, clone, naming, stats, and history** ([#28](https://github.com/jakeryderv/rocky/issues/28),
   which absorbed `get_entries`/`get_tree` from #22). History crosses the seam as `SessionEntrySummary`, a
   projection of the harness's nine-variant `SessionEntry` union: identity, parent, kind, preview, timestamp
@@ -90,8 +94,7 @@ with it.
    client cannot configure a provider. Shell out to `rocky auth` first; a Rocky-owned auth surface in the
    contract is the real answer.
 
-Then, needed but not blocking: settings, theme,
-and keybinding screens ([#27](https://github.com/jakeryderv/rocky/issues/27)).
+Every item is done. What is left before phase B is the auth gap above.
 
 ## Phase B — flip the default and move to Bun
 
@@ -100,6 +103,10 @@ renderer has no FFI backend on Node). Keep a `--legacy-tui` escape hatch for one
 runner for the root and harness suites, and settle packaging, which `pack:check` no longer covers.
 
 ## Phase C — remove pi-tui
+
+**C1 caveat.** `modes/interactive/theme/theme.ts` must move rather than be deleted: it holds the theme
+registry and colour resolution, which the client now reads through `getAvailableThemes` and
+`getResolvedThemeColors`. Themes are a Rocky-owned concern that outlives `pi-tui`.
 
 **C1.** Delete `packages/harness/src/modes/interactive/` (17,415 lines, 41 pi-tui files) and the three
 excluded harness tests that depend on pi-tui test helpers. Mechanical once nothing imports it.
@@ -111,7 +118,9 @@ excluded harness tests that depend on pi-tui test helpers. Mechanical once nothi
   back to strings. Making the tools emit structured data removes that translation and unblocks a web client.
   This is the first place Rocky genuinely diverges from Pi rather than deleting from it — worth pulling
   forward ahead of phase A's tool-display UI so that UI is built once.
-- **Keybindings.** `core/keybindings.ts` wraps pi-tui's `TUI_KEYBINDINGS` and `KeybindingsManager`.
+- **Keybindings.** `core/keybindings.ts` wraps pi-tui's `TUI_KEYBINDINGS` and `KeybindingsManager`. The
+  client's `/keys` is a help screen until this lands: what replaces the binding shape decides what a client
+  can rebind, so inventing it early would be inventing it blind.
 - **The extension UI API.** `core/extensions/types.ts` types roughly ten signatures against pi-tui's `TUI`,
   `OverlayHandle`, and `EditorComponent`. Whatever replaces them defines what a Rocky extension can draw —
   a design decision, not a port.

@@ -42,6 +42,10 @@ export const CLIENT_COMMANDS: readonly CommandEntry[] = [
   },
   { name: "name", description: "Name this session", argumentHint: "<name>", origin: "client" },
   { name: "stats", description: "Show what this session has cost", origin: "client" },
+  { name: "settings", description: "Show this session's settings", origin: "client" },
+  { name: "theme", description: "Switch the colour theme", origin: "client" },
+  { name: "thinking", description: "Set how much the model reasons", origin: "client" },
+  { name: "keys", description: "Show what the keys do", origin: "client" },
 ];
 
 /**

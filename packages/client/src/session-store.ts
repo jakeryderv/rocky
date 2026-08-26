@@ -16,6 +16,8 @@ import type {
   SessionStats,
   SessionSummary,
   SlashCommand,
+  ThemeSnapshot,
+  ThinkingLevel,
 } from "@rocky/contract";
 import { createSignal } from "solid-js";
 import {
@@ -62,6 +64,12 @@ export interface SessionStore {
   /** A one-off line for the user: where an export went, what the stats are. */
   notice: () => string | undefined;
   clearNotice: () => void;
+  /** The active theme, and the names a client can switch to. */
+  theme: () => ThemeSnapshot | undefined;
+  themeNames: () => readonly string[];
+  loadThemes: () => Promise<void>;
+  setTheme: (name: string) => Promise<void>;
+  setThinkingLevel: (level: ThinkingLevel) => Promise<void>;
   submit: (text: string) => Promise<void>;
   abort: () => Promise<void>;
   dispose: () => void;
@@ -80,6 +88,8 @@ export function createSessionStore(port: SessionPort): SessionStore {
   const [forkPoints, setForkPoints] = createSignal<readonly ForkPoint[]>([]);
   const [stats, setStats] = createSignal<SessionStats | undefined>(undefined);
   const [notice, setNotice] = createSignal<string | undefined>(undefined);
+  const [theme, setTheme] = createSignal<ThemeSnapshot | undefined>(undefined);
+  const [themeNames, setThemeNames] = createSignal<readonly string[]>([]);
 
   // State arrives as a push. The one `get_state` below is the cold-start
   // snapshot only: without it a client that connects mid-session would render
@@ -116,6 +126,9 @@ export function createSessionStore(port: SessionPort): SessionStore {
     if (event.type === "state_changed") {
       setState(event.state);
     }
+    if (event.type === "theme_changed") {
+      setTheme(event.theme);
+    }
     if (event.type === "queue_update") {
       setQueue({ steering: event.steering, followUp: event.followUp });
     }
@@ -134,8 +147,18 @@ export function createSessionStore(port: SessionPort): SessionStore {
     }
   };
 
+  const loadTheme = async () => {
+    const result = await port.execute({ type: "get_theme" });
+    if (result.ok && result.command === "get_theme") {
+      setTheme(result.theme);
+    }
+  };
+
   void loadInitialState();
   void loadCommands();
+  // At startup rather than on demand: the palette is needed for the first
+  // frame, not when a picker opens.
+  void loadTheme();
 
   // On demand rather than at startup: the catalog costs a provider-availability
   // snapshot, and most sessions never open the picker.
@@ -234,6 +257,18 @@ export function createSessionStore(port: SessionPort): SessionStore {
     },
     notice,
     clearNotice: () => setNotice(undefined),
+    theme,
+    themeNames,
+    loadThemes: async () => {
+      const result = await port.execute({ type: "get_themes" });
+      if (result.ok && result.command === "get_themes") {
+        setThemeNames(result.themes);
+      } else if (!result.ok) {
+        setTranscript((current) => ({ ...current, error: result.error }));
+      }
+    },
+    setTheme: (name: string) => send({ type: "set_theme", name }),
+    setThinkingLevel: (level: ThinkingLevel) => send({ type: "set_thinking_level", level }),
     runBash: (command: string, excludeFromContext: boolean) =>
       send({ type: "bash", command, ...(excludeFromContext ? { excludeFromContext: true } : {}) }),
     abortBash: () => send({ type: "abort_bash" }),
