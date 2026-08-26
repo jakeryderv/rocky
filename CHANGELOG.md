@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+- **`rocky` can now tell which front end an invocation belongs to** — though it still always chooses the
+  harness. The router is pure, driven by the harness's own argument parser rather than by substring matching
+  on argv, and lands behind a single flag so that flipping the default later is one edit and reverting it is
+  one edit. Substring matching is how `rocky "please use --legacy-tui"` would become a legacy launch instead
+  of a prompt.
+
+  It has three outcomes, not two. Refusing is a real answer: the client cannot yet honour `--model`,
+  `--thinking`, `--resume` and the rest, and routing to it anyway would silently drop something the user
+  typed. A refusal names every argument it could not take, says what to do instead once running, and points
+  at `--legacy-tui`.
+
 - **Fixed: the client wrote sessions to a different directory than `rocky` did.** The client host left the
   session directory to the default while the CLI resolved it from `--session-dir`, then
   `ROCKY_CODING_AGENT_SESSION_DIR`, then the stored setting. Getting this wrong never failed — it silently

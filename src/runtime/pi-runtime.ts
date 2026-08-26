@@ -1,6 +1,7 @@
 import { chmodSync, existsSync, mkdirSync } from "node:fs";
 import { dirname, join } from "node:path";
 import type { ExtensionAPI, InlineExtension } from "@jakeryderv/rocky-harness";
+import { routeRockyInvocation } from "./route-invocation.js";
 
 const ROCKY_CONFIG_DIR = ".rocky";
 const PRIVATE_DIRECTORY_MODE = 0o700;
@@ -277,6 +278,20 @@ export function applyRockyProcessIdentity(): void {
   process.env["AI_AGENT"] = "rocky";
 }
 
+/**
+ * Whether `rocky` may launch the client.
+ *
+ * A single flag, so flipping the default is one edit and reverting it is one
+ * edit. `ROCKY_CLIENT_DEFAULT` exists to exercise the routed path before that
+ * flip, not as a supported control.
+ */
+const CLIENT_IS_DEFAULT = false;
+
+function clientEnabled(): boolean {
+  const override = process.env["ROCKY_CLIENT_DEFAULT"];
+  return override === undefined ? CLIENT_IS_DEFAULT : isTruthy(override);
+}
+
 export async function runRocky(args: readonly string[]): Promise<void> {
   applyRockyProcessIdentity();
 
@@ -284,7 +299,29 @@ export async function runRocky(args: readonly string[]): Promise<void> {
   try {
     const harness = await loadPiRuntime();
     ensurePrivateDirectory(harness.getAgentDir());
-    const runtimeArgs = applyRockyDiscoveryPolicy(args);
+
+    const route = routeRockyInvocation({
+      argv: args,
+      parse: (parsedArgs) => harness.parseArgs(parsedArgs) as never,
+      isInteractive: Boolean(process.stdin.isTTY && process.stdout.isTTY),
+      clientEnabled: clientEnabled(),
+      startupBenchmark: isTruthy(process.env["PI_STARTUP_BENCHMARK"]),
+    });
+
+    if (route.target === "refuse") {
+      throw new RockyRuntimeError(route.message);
+    }
+    if (route.target === "client") {
+      const { runRockyClient } = await import("../client-host/tui-entry.js");
+      await runRockyClient({
+        cwd: process.cwd(),
+        ...(route.options.sessionDir !== undefined ? { sessionDir: route.options.sessionDir } : {}),
+        ...(route.options.offline !== undefined ? { offline: route.options.offline } : {}),
+      });
+      return;
+    }
+
+    const runtimeArgs = applyRockyDiscoveryPolicy(route.args);
     await harness.main(runtimeArgs, {
       extensionFactories: [
         privateStorageExtension(restoreCreationMask),
