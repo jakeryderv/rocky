@@ -2,6 +2,21 @@
 
 ## Unreleased
 
+- **The client is themed.** `/theme` switches the colour theme, and the client paints from the theme's own
+  resolved colours rather than hard-coded hex. The setting is the core's, so a theme chosen in the client is
+  the theme `rocky` uses too, and a change made anywhere arrives as a `theme_changed` push. Every colour key
+  is optional and falls back, because a user-authored theme need not define them all.
+
+- **Settings, thinking level, and key help.** `/settings` shows the session's settings and names the command
+  that changes each one it can change; `/thinking` sets the reasoning level, which had `set_thinking_level`
+  in the contract and no UI; `/keys` says what the keys do. The contract gains `get_themes`, `get_theme`,
+  `set_theme`, a `ThemeSnapshot`, and a `theme_changed` event.
+
+- **Keybindings stay fixed for now**, and `/keys` is a help screen rather than an editor. The core's
+  bindings live in `core/keybindings.ts`, one of the modules still built on `pi-tui`; what replaces them is a
+  phase C design decision rather than a port, so promising an editor here would mean inventing that shape
+  blind.
+
 - **Export, fork, clone, naming, stats, and session history.** `/fork` continues from an earlier message and
   puts that message back in the editor — which is what "fork from here" has to mean; `/clone` copies the
   session as it stands; `/export [path]` writes the conversation out as HTML and says where it went; `/name`

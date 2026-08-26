@@ -14,6 +14,7 @@ import type {
   SessionStats,
   SessionSummary,
   SlashCommand,
+  ThemeSnapshot,
   Usage,
 } from "./types.js";
 
@@ -119,6 +120,11 @@ export const FIXTURE_STATS: SessionStats = {
   contextWindow: 400_000,
 };
 
+export const FIXTURE_THEME: ThemeSnapshot = {
+  name: "dark",
+  colors: { text: "#e5e5e7", muted: "#7a7a7a", accent: "#7aa2f7", error: "#f7768e" },
+};
+
 export const FIXTURE_COMMANDS: SessionCommand[] = [
   { id: "c1", type: "prompt", text: "explain this repo" },
   {
@@ -152,6 +158,9 @@ export const FIXTURE_COMMANDS: SessionCommand[] = [
   { id: "c25", type: "set_session_name", name: "contract work" },
   { id: "c26", type: "get_session_stats" },
   { id: "c27", type: "get_entries", since: "e1" },
+  { id: "c28", type: "get_themes" },
+  { id: "c29", type: "get_theme" },
+  { id: "c30", type: "set_theme", name: "light" },
 ];
 
 export const FIXTURE_EVENTS: SessionEvent[] = [
@@ -206,6 +215,7 @@ export const FIXTURE_EVENTS: SessionEvent[] = [
   { type: "retry_start", attempt: 1, maxAttempts: 3, delayMs: 500, error: "overloaded" },
   { type: "retry_end", success: true, attempt: 1 },
   { type: "state_changed", state: FIXTURE_STATE },
+  { type: "theme_changed", theme: FIXTURE_THEME },
   { type: "session_switched", state: FIXTURE_STATE },
   { type: "session_name_changed", name: "renamed" },
   { type: "error", message: "provider rejected the request" },
@@ -239,6 +249,15 @@ export const FIXTURE_COMMAND_RESULTS: CommandResult[] = [
   },
   { type: "command_result", id: "c16", command: "list_sessions", ok: true, sessions: FIXTURE_SESSIONS },
   { type: "command_result", id: "c21", command: "export_html", ok: true, path: "/home/user/x.html" },
+  {
+    type: "command_result",
+    id: "c28",
+    command: "get_themes",
+    ok: true,
+    themes: ["dark", "light"],
+    active: "dark",
+  },
+  { type: "command_result", id: "c29", command: "get_theme", ok: true, theme: FIXTURE_THEME },
   {
     type: "command_result",
     id: "c22",

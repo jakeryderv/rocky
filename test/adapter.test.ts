@@ -1059,6 +1059,53 @@ describe("PiAgentSessionAdapter", () => {
     });
   });
 
+  // Themes are a core setting shared with the CLI, so a change has to reach
+  // every client watching the session, not only the one that asked.
+  it("pushes the resolved theme when it is changed", async () => {
+    let active = "dark";
+    const { session } = fakeSession();
+    const adapter = new PiAgentSessionAdapter(session, {
+      cwd: "/work",
+      themes: {
+        list: () => ["dark", "light"],
+        active: () => active,
+        resolve: () => (active === "dark" ? { text: "#e5e5e7" } : { text: "#000000" }),
+        set: (name: string) => {
+          active = name;
+        },
+      },
+    });
+    const seen: SessionEvent[] = [];
+    adapter.start();
+    adapter.subscribe((event) => seen.push(event));
+
+    expect(await adapter.execute({ type: "get_themes" })).toEqual({
+      type: "command_result",
+      id: undefined,
+      command: "get_themes",
+      ok: true,
+      themes: ["dark", "light"],
+      active: "dark",
+    });
+
+    await adapter.execute({ type: "set_theme", name: "light" });
+    expect(seen.filter((event) => event.type === "theme_changed")).toEqual([
+      { type: "theme_changed", theme: { name: "light", colors: { text: "#000000" } } },
+    ]);
+  });
+
+  it("reports plainly when the host has no themes", async () => {
+    const { session } = fakeSession();
+    const adapter = new PiAgentSessionAdapter(session, { cwd: "/work" });
+    for (const command of [
+      { type: "get_themes" },
+      { type: "get_theme" },
+      { type: "set_theme", name: "light" },
+    ] as const) {
+      expect((await adapter.execute(command)).ok).toBe(false);
+    }
+  });
+
   it("keeps every command result JSON-serializable", async () => {
     const { session } = fakeSession();
     const adapter = new PiAgentSessionAdapter(session, {

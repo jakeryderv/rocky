@@ -7,7 +7,14 @@
 import type { MouseEvent, ScrollBoxRenderable, TextareaRenderable } from "@opentui/core";
 import { defaultTextareaKeyBindings } from "@opentui/core";
 import { useKeyboard, useRenderer } from "@opentui/solid";
-import type { ForkPoint, ModelRef, QueueMode, SessionPort, SessionSummary } from "@rocky/contract";
+import type {
+  ForkPoint,
+  ModelRef,
+  QueueMode,
+  SessionPort,
+  SessionSummary,
+  ThinkingLevel,
+} from "@rocky/contract";
 import { createEffect, createMemo, createSignal, For, Show } from "solid-js";
 import { mergeCommands, parseBashPrefix, routeSubmission } from "./model/commands.js";
 import {
@@ -20,15 +27,20 @@ import {
 } from "./model/completion.js";
 import { editorRows, promptKeyBindings } from "./model/editor.js";
 import { emptyHistory, newer, older, remember } from "./model/history.js";
+import { KEY_BINDINGS } from "./model/keys.js";
 import {
   filterForkPoints,
   filterModels,
+  filterNames,
   forkPointLabel,
   isActiveModel,
   modelLabel,
+  settingsRows,
   statsLine,
 } from "./model/picker.js";
 import { filterSessions, sessionLabel, sortSessions } from "./model/sessions.js";
+import { paletteFrom } from "./model/theme.js";
+import { THINKING_LEVELS } from "./model/thinking.js";
 import { entryLines } from "./model/transcript.js";
 import { createSessionStore } from "./session-store.js";
 
@@ -48,7 +60,9 @@ export function App(props: { port: SessionPort; onQuit?: (() => void) | undefine
   const [selected, setSelected] = createSignal(0);
   // One signal rather than a flag per overlay: two booleans can disagree, and
   // "which overlay is open" is a single fact.
-  const [overlay, setOverlay] = createSignal<"model" | "session" | "fork" | undefined>(undefined);
+  const [overlay, setOverlay] = createSignal<
+    "model" | "session" | "fork" | "theme" | "thinking" | "settings" | "keys" | undefined
+  >(undefined);
   const [picked, setPicked] = createSignal(0);
   // Sampled when a picker opens rather than read during render: relative times
   // do not need to tick while the list is on screen, and a clock read inside
@@ -106,16 +120,33 @@ export function App(props: { port: SessionPort; onQuit?: (() => void) | undefine
     overlay() === "fork" ? filterForkPoints(store.forkPoints(), draft()) : [],
   );
 
+  const pickerThemes = createMemo(() =>
+    overlay() === "theme" ? filterNames(store.themeNames(), draft()) : [],
+  );
+
+  const pickerThinking = createMemo(() =>
+    overlay() === "thinking" ? filterNames([...THINKING_LEVELS], draft()) : [],
+  );
+
+  /** The palette every colour on screen comes from. */
+  const palette = createMemo(() => paletteFrom(store.theme()));
+
   const pickerLength = () =>
     overlay() === "model"
       ? pickerModels().length
       : overlay() === "session"
         ? pickerSessions().length
-        : pickerForks().length;
+        : overlay() === "fork"
+          ? pickerForks().length
+          : overlay() === "theme"
+            ? pickerThemes().length
+            : overlay() === "thinking"
+              ? pickerThinking().length
+              : 0;
 
   createEffect(() => setPicked((current) => clampSelection(current, pickerLength())));
 
-  const openPicker = (kind: "model" | "session" | "fork") => {
+  const openPicker = (kind: "model" | "session" | "fork" | "theme" | "thinking" | "settings" | "keys") => {
     showInInput("");
     setPicked(0);
     setNow(Date.now());
@@ -125,8 +156,10 @@ export function App(props: { port: SessionPort; onQuit?: (() => void) | undefine
       void store.loadModels();
     } else if (kind === "session") {
       void store.loadSessions();
-    } else {
+    } else if (kind === "fork") {
       void store.loadForkPoints();
+    } else if (kind === "theme") {
+      void store.loadThemes();
     }
   };
 
@@ -217,6 +250,18 @@ export function App(props: { port: SessionPort; onQuit?: (() => void) | undefine
       case "stats":
         void store.loadStats();
         return;
+      case "settings":
+        openPicker("settings");
+        return;
+      case "theme":
+        openPicker("theme");
+        return;
+      case "thinking":
+        openPicker("thinking");
+        return;
+      case "keys":
+        openPicker("keys");
+        return;
     }
   };
 
@@ -231,6 +276,27 @@ export function App(props: { port: SessionPort; onQuit?: (() => void) | undefine
     }
     if (overlay() === "fork") {
       chooseForkPoint(pickerForks()[picked()]);
+      return;
+    }
+    if (overlay() === "theme") {
+      const name = pickerThemes()[picked()];
+      if (name) {
+        void store.setTheme(name);
+      }
+      closeOverlay();
+      return;
+    }
+    if (overlay() === "thinking") {
+      const level = pickerThinking()[picked()];
+      if (level) {
+        void store.setThinkingLevel(level as ThinkingLevel);
+      }
+      closeOverlay();
+      return;
+    }
+    // `/settings` and `/keys` are read-only screens; Enter just dismisses them.
+    if (overlay() === "settings" || overlay() === "keys") {
+      closeOverlay();
       return;
     }
     if (text.trim().length === 0) {
@@ -414,35 +480,38 @@ export function App(props: { port: SessionPort; onQuit?: (() => void) | undefine
       </scrollbox>
 
       <Show when={!pinned()}>
-        <text fg="#888888" style={{ flexShrink: 0 }}>
+        <text fg={palette().muted} style={{ flexShrink: 0 }}>
           ↓ more below
         </text>
       </Show>
 
       <Show when={store.transcript().error}>
         {(error: () => string) => (
-          <text fg="#ff5555" style={{ flexShrink: 0 }}>
+          <text fg={palette().error} style={{ flexShrink: 0 }}>
             ✖ {error()}
           </text>
         )}
       </Show>
 
-      <text fg="#888888" style={{ flexShrink: 0 }}>
+      <text fg={palette().muted} style={{ flexShrink: 0 }}>
         {status()}
       </text>
 
       <Show when={overlay() === "model"}>
         <box style={{ flexDirection: "column", flexShrink: 0 }}>
-          <text fg="#888888">Select a model ↑↓ · enter selects · ctrl+c closes</text>
+          <text fg={palette().muted}>Select a model ↑↓ · enter selects · ctrl+c closes</text>
           <Show
             when={pickerModels().length > 0}
             fallback={
-              <text fg="#888888"> {store.models().length === 0 ? "no models available" : "no match"}</text>
+              <text fg={palette().muted}>
+                {" "}
+                {store.models().length === 0 ? "no models available" : "no match"}
+              </text>
             }
           >
             <For each={pickerModels()}>
               {(model, index) => (
-                <text fg={index() === picked() ? "#ffffff" : "#888888"}>
+                <text fg={index() === picked() ? palette().accent : palette().muted}>
                   {index() === picked() ? "› " : "  "}
                   {isActiveModel(model, store.state()?.model) ? "* " : ""}
                   {modelLabel(model)}
@@ -455,10 +524,12 @@ export function App(props: { port: SessionPort; onQuit?: (() => void) | undefine
       </Show>
 
       <Show when={store.stats() !== undefined && store.notice() === undefined}>
-        {() => <text fg="#888888">Σ {statsLine(store.stats() as never)}</text>}
+        {() => <text fg={palette().muted}>Σ {statsLine(store.stats() as never)}</text>}
       </Show>
 
-      <Show when={store.notice()}>{(text: () => string) => <text fg="#888888">✓ {text()}</text>}</Show>
+      <Show when={store.notice()}>
+        {(text: () => string) => <text fg={palette().muted}>✓ {text()}</text>}
+      </Show>
 
       <Show when={store.queue().steering.length + store.queue().followUp.length > 0}>
         <box style={{ flexDirection: "column", flexShrink: 0 }}>
@@ -469,7 +540,7 @@ export function App(props: { port: SessionPort; onQuit?: (() => void) | undefine
             ]}
           >
             {([kind, text]) => (
-              <text fg="#888888">
+              <text fg={palette().muted}>
                 ⇥ {kind}: {queuedPreview(text)}
               </text>
             )}
@@ -477,13 +548,69 @@ export function App(props: { port: SessionPort; onQuit?: (() => void) | undefine
         </box>
       </Show>
 
+      <Show when={overlay() === "settings"}>
+        <box style={{ flexDirection: "column", flexShrink: 0 }}>
+          <text fg={palette().muted}>Settings enter or ctrl+c closes</text>
+          <For each={settingsRows(store.state() as never)}>
+            {(row) => (
+              <text fg={palette().muted}>
+                {"  "}
+                {row.label.padEnd(13)}
+                {row.value}
+                {row.command ? `   ${row.command}` : ""}
+              </text>
+            )}
+          </For>
+        </box>
+      </Show>
+
+      <Show when={overlay() === "keys"}>
+        <box style={{ flexDirection: "column", flexShrink: 0 }}>
+          <text fg={palette().muted}>Keys enter or ctrl+c closes</text>
+          <For each={KEY_BINDINGS}>
+            {(binding) => (
+              <text fg={palette().muted}>
+                {"  "}
+                {binding.keys.padEnd(30)}
+                {binding.description}
+              </text>
+            )}
+          </For>
+        </box>
+      </Show>
+
+      <Show when={overlay() === "theme" || overlay() === "thinking"}>
+        <box style={{ flexDirection: "column", flexShrink: 0 }}>
+          <text fg={palette().muted}>
+            {overlay() === "theme" ? "Select a theme" : "Set the thinking level"} ↑↓ · enter selects · ctrl+c
+            closes
+          </text>
+          <Show
+            when={(overlay() === "theme" ? pickerThemes() : pickerThinking()).length > 0}
+            fallback={<text fg={palette().muted}> no match</text>}
+          >
+            <For each={overlay() === "theme" ? pickerThemes() : pickerThinking()}>
+              {(name, index) => (
+                <text fg={index() === picked() ? palette().accent : palette().muted}>
+                  {index() === picked() ? "› " : "  "}
+                  {(overlay() === "theme" ? store.theme()?.name : store.state()?.thinkingLevel) === name
+                    ? "* "
+                    : ""}
+                  {name}
+                </text>
+              )}
+            </For>
+          </Show>
+        </box>
+      </Show>
+
       <Show when={overlay() === "fork"}>
         <box style={{ flexDirection: "column", flexShrink: 0 }}>
-          <text fg="#888888">Fork before a message ↑↓ · enter forks · ctrl+c closes</text>
+          <text fg={palette().muted}>Fork before a message ↑↓ · enter forks · ctrl+c closes</text>
           <Show
             when={pickerForks().length > 0}
             fallback={
-              <text fg="#888888">
+              <text fg={palette().muted}>
                 {"  "}
                 {store.forkPoints().length === 0 ? "nothing to fork from yet" : "no match"}
               </text>
@@ -491,7 +618,7 @@ export function App(props: { port: SessionPort; onQuit?: (() => void) | undefine
           >
             <For each={pickerForks()}>
               {(point, index) => (
-                <text fg={index() === picked() ? "#ffffff" : "#888888"}>
+                <text fg={index() === picked() ? palette().accent : palette().muted}>
                   {index() === picked() ? "› " : "  "}
                   {forkPointLabel(point)}
                 </text>
@@ -503,11 +630,11 @@ export function App(props: { port: SessionPort; onQuit?: (() => void) | undefine
 
       <Show when={overlay() === "session"}>
         <box style={{ flexDirection: "column", flexShrink: 0 }}>
-          <text fg="#888888">Resume a session ↑↓ · enter resumes · ctrl+c closes</text>
+          <text fg={palette().muted}>Resume a session ↑↓ · enter resumes · ctrl+c closes</text>
           <Show
             when={pickerSessions().length > 0}
             fallback={
-              <text fg="#888888">
+              <text fg={palette().muted}>
                 {"  "}
                 {store.sessions().length === 0 ? "no sessions found" : "no match"}
               </text>
@@ -515,7 +642,7 @@ export function App(props: { port: SessionPort; onQuit?: (() => void) | undefine
           >
             <For each={pickerSessions()}>
               {(session, index) => (
-                <text fg={index() === picked() ? "#ffffff" : "#888888"}>
+                <text fg={index() === picked() ? palette().accent : palette().muted}>
                   {index() === picked() ? "› " : "  "}
                   {sessionLabel(session, now())}
                 </text>
@@ -529,7 +656,7 @@ export function App(props: { port: SessionPort; onQuit?: (() => void) | undefine
         <box style={{ flexDirection: "column", flexShrink: 0 }}>
           <For each={suggestions()}>
             {(command, index) => (
-              <text fg={index() === selected() ? "#ffffff" : "#888888"}>
+              <text fg={index() === selected() ? palette().accent : palette().muted}>
                 {index() === selected() ? "› " : "  "}
                 {completionLabel(command)}
                 {command.description ? ` — ${command.description}` : ""}

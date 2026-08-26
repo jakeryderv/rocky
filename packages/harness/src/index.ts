@@ -391,8 +391,11 @@ export {
 } from "./modes/interactive/components/index.ts";
 // Theme utilities for custom tools and extensions
 export {
+	getAvailableThemes,
+	getDefaultTheme,
 	getLanguageFromPath,
 	getMarkdownTheme,
+	getResolvedThemeColors,
 	getSelectListTheme,
 	getSettingsListTheme,
 	highlightCode,

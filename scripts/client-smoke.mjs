@@ -29,6 +29,23 @@ const port = {
     // The data-bearing commands have to be answered for real. A result that
     // claims `ok` while omitting its payload is not a shape the contract
     // permits, and the client is entitled to read the payload without guarding.
+    if (command.type === "get_theme") {
+      return {
+        type: "command_result",
+        command: "get_theme",
+        ok: true,
+        theme: { name: "dark", colors: {} },
+      };
+    }
+    if (command.type === "get_themes") {
+      return {
+        type: "command_result",
+        command: "get_themes",
+        ok: true,
+        themes: ["dark", "light"],
+        active: "dark",
+      };
+    }
     if (command.type === "get_commands") {
       return { type: "command_result", command: "get_commands", ok: true, commands: [] };
     }

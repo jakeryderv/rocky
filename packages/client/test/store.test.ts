@@ -40,6 +40,14 @@ function fakePort(options: { deferInitialState?: boolean } = {}) {
     },
     execute: async (command): Promise<CommandResult> => {
       sent.push(command);
+      if (command.type === "get_theme") {
+        return {
+          type: "command_result",
+          command: "get_theme",
+          ok: true,
+          theme: { name: "dark", colors: { text: "#e5e5e7", muted: "#7a7a7a" } },
+        };
+      }
       if (command.type === "get_messages") {
         return {
           type: "command_result",
@@ -94,7 +102,7 @@ test("issues no get_state after a command", async () => {
   await settle();
   await store.submit("hello");
 
-  expect(sent.map((command) => command.type)).toEqual(["get_state", "get_commands", "prompt"]);
+  expect(sent.map((command) => command.type)).toEqual(["get_state", "get_commands", "get_theme", "prompt"]);
   store.dispose();
 });
 
@@ -158,5 +166,17 @@ test("rebuilds the transcript from history when the session is switched", async 
   expect(store.state()?.sessionId).toBe("s2");
   expect(store.transcript().entries).toHaveLength(1);
   expect(store.transcript().entries[0]?.blocks[0]).toEqual({ kind: "text", text: "resumed history" });
+  store.dispose();
+});
+
+// The palette is needed for the first frame, not when a picker opens.
+test("loads the theme at startup and repaints when it changes elsewhere", async () => {
+  const { port, emit } = fakePort();
+  const store = createSessionStore(port);
+  await settle();
+  expect(store.theme()?.name).toBe("dark");
+
+  emit({ type: "theme_changed", theme: { name: "light", colors: { text: "#000000" } } });
+  expect(store.theme()?.name).toBe("light");
   store.dispose();
 });
