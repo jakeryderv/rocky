@@ -432,6 +432,83 @@ describe("PiAgentSessionAdapter", () => {
     expect(session.setModel).not.toHaveBeenCalled();
   });
 
+  it("pushes state_changed when an event moved the state", () => {
+    const { session, emit } = fakeSession();
+    const mutable = session as { isStreaming: boolean };
+    const adapter = new PiAgentSessionAdapter(session, { cwd: "/work" });
+    const seen: SessionEvent[] = [];
+    adapter.start();
+    adapter.subscribe((event) => seen.push(event));
+
+    mutable.isStreaming = true;
+    emit({ type: "turn_start" });
+
+    expect(seen.map((event) => event.type)).toEqual(["turn_start", "state_changed"]);
+    const pushed = seen[1] as Extract<SessionEvent, { type: "state_changed" }>;
+    expect(pushed.state.isStreaming).toBe(true);
+  });
+
+  it("stays quiet while state is unchanged, so a stream does not push per delta", () => {
+    const { session, emit } = fakeSession();
+    const adapter = new PiAgentSessionAdapter(session, { cwd: "/work" });
+    const seen: SessionEvent[] = [];
+    adapter.start();
+    adapter.subscribe((event) => seen.push(event));
+
+    for (let index = 0; index < 3; index += 1) {
+      emit({
+        type: "message_update",
+        assistantMessageEvent: { type: "text_delta", contentIndex: 0, delta: "hi" },
+      });
+    }
+
+    expect(seen.filter((event) => event.type === "state_changed")).toEqual([]);
+  });
+
+  it("pushes state for a harness event the contract does not translate", () => {
+    const { session, emit } = fakeSession();
+    const mutable = session as { pendingMessageCount: number };
+    const adapter = new PiAgentSessionAdapter(session, { cwd: "/work" });
+    const seen: SessionEvent[] = [];
+    adapter.start();
+    adapter.subscribe((event) => seen.push(event));
+
+    mutable.pendingMessageCount = 2;
+    emit({ type: "bash_execution_update", delta: "ls" });
+
+    expect(seen.map((event) => event.type)).toEqual(["state_changed"]);
+  });
+
+  it("pushes state after a setter the harness reports no event for", async () => {
+    const { session } = fakeSession({
+      setThinkingLevel: vi.fn(function (this: void, level: string) {
+        mutable.thinkingLevel = level;
+      }),
+    });
+    const mutable = session as { thinkingLevel: string };
+    const adapter = new PiAgentSessionAdapter(session, { cwd: "/work" });
+    const seen: SessionEvent[] = [];
+    adapter.start();
+    adapter.subscribe((event) => seen.push(event));
+
+    await adapter.execute({ type: "set_thinking_level", level: "high" });
+
+    expect(seen).toEqual([
+      { type: "state_changed", state: { ...adapter.getState(), thinkingLevel: "high" } },
+    ]);
+  });
+
+  it("does not push state before start, so a disposed adapter stays silent", async () => {
+    const { session } = fakeSession();
+    const adapter = new PiAgentSessionAdapter(session, { cwd: "/work" });
+    const seen: SessionEvent[] = [];
+    adapter.subscribe((event) => seen.push(event));
+
+    await adapter.execute({ type: "set_thinking_level", level: "high" });
+
+    expect(seen).toEqual([]);
+  });
+
   it("keeps every command result JSON-serializable", async () => {
     const { session } = fakeSession();
     const adapter = new PiAgentSessionAdapter(session, {

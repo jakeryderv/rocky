@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+- **The client no longer polls for session state.** `state_changed` was declared in the contract but never
+  emitted, so `session-store.ts` compensated by re-issuing `get_state` after every turn boundary and after
+  every command. That is free in-process and wrong the moment a transport sits in between. The adapter now
+  publishes `state_changed` whenever its projected state actually differs — after every harness event,
+  including ones the contract does not translate, and after every command, because several of them mutate
+  state through synchronous setters the harness reports no event for. The diff is what keeps a streaming turn
+  from pushing an identical snapshot per delta. The client keeps exactly one `get_state`: the cold-start
+  snapshot, which a later push overtakes rather than being clobbered by.
+
 - **The repository's agent guide now actually reaches Claude Code.** `AGENTS.md` held the invariants, the
   layout, and the fork boundary — and was never loaded, because Claude Code reads `CLAUDE.md` and the project
   had neither that nor a `.claude/` directory. A session therefore rediscovered the architecture from source
