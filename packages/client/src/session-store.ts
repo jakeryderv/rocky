@@ -6,13 +6,15 @@
  * without a model call.
  */
 
-import type { SessionCommand, SessionPort, SessionState } from "@rocky/contract";
+import type { SessionCommand, SessionPort, SessionState, SlashCommand } from "@rocky/contract";
 import { createSignal } from "solid-js";
 import { applyEvent, emptyTranscript, type TranscriptState } from "./model/transcript.js";
 
 export interface SessionStore {
   transcript: () => TranscriptState;
   state: () => SessionState | undefined;
+  /** `/name` commands the core can run. Empty until the first load resolves. */
+  commands: () => readonly SlashCommand[];
   submit: (text: string) => Promise<void>;
   abort: () => Promise<void>;
   dispose: () => void;
@@ -21,6 +23,7 @@ export interface SessionStore {
 export function createSessionStore(port: SessionPort): SessionStore {
   const [transcript, setTranscript] = createSignal<TranscriptState>(emptyTranscript());
   const [state, setState] = createSignal<SessionState | undefined>(undefined);
+  const [commands, setCommands] = createSignal<readonly SlashCommand[]>([]);
 
   // State arrives as a push. The one `get_state` below is the cold-start
   // snapshot only: without it a client that connects mid-session would render
@@ -37,9 +40,23 @@ export function createSessionStore(port: SessionPort): SessionStore {
     if (event.type === "state_changed") {
       setState(event.state);
     }
+    if (event.type === "settled") {
+      void loadCommands();
+    }
   });
 
+  // Extensions register commands asynchronously and the resource loader
+  // reloads, so this is re-read on `settled` rather than only at startup —
+  // cheap, and bounded by turns rather than by events.
+  const loadCommands = async () => {
+    const result = await port.execute({ type: "get_commands" });
+    if (result.ok && result.command === "get_commands") {
+      setCommands(result.commands);
+    }
+  };
+
   void loadInitialState();
+  void loadCommands();
 
   const send = async (command: SessionCommand) => {
     const result = await port.execute(command);
@@ -51,6 +68,7 @@ export function createSessionStore(port: SessionPort): SessionStore {
   return {
     transcript,
     state,
+    commands,
     submit: (text: string) => send({ type: "prompt", text }),
     abort: () => send({ type: "abort" }),
     dispose: () => unsubscribe(),

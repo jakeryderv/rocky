@@ -102,6 +102,13 @@ describe("contract serialization", () => {
     expect([...declaredTypes].filter((type) => !covered.has(type as never))).toEqual([]);
   });
 
+  it("covers every command type in the union", () => {
+    const covered = new Set(FIXTURE_COMMANDS.map((command) => command.type));
+    const declaredTypes = declaredTypeTags("export type SessionCommand =");
+    expect(declaredTypes.size).toBeGreaterThan(10);
+    expect([...declaredTypes].filter((type) => !covered.has(type as never))).toEqual([]);
+  });
+
   it("covers every message-delta variant", () => {
     const covered = new Set(FIXTURE_DELTAS.map((delta) => delta.type));
     const declaredTypes = declaredTypeTags("export type MessageDelta =");

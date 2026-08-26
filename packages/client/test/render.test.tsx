@@ -43,6 +43,18 @@ function fakePort() {
           },
         };
       }
+      if (command.type === "get_commands") {
+        return {
+          type: "command_result",
+          command: "get_commands",
+          ok: true,
+          commands: [
+            { name: "compact", description: "Compact the conversation", source: "extension" },
+            { name: "copy", source: "extension" },
+            { name: "explain", source: "prompt", argumentHint: "<path>" },
+          ],
+        };
+      }
       return { type: "command_result", command: command.type as never, ok: true };
     },
   };
@@ -384,4 +396,69 @@ test("holds a multi-line paste aside and submits it whole", async () => {
 
   const prompt = sent.find((command) => command.type === "prompt") as { text: string } | undefined;
   expect(prompt?.text).toBe("line one\nline two\nline three");
+});
+
+test("suggests commands while a slash token is being typed", async () => {
+  const { port } = fakePort();
+  const t = await testRender(() => <App port={port} />, { width: 70, height: 16 });
+  await t.renderOnce();
+  expect(t.captureCharFrame()).not.toContain("/compact");
+
+  await t.mockInput.typeText("/co");
+  await t.renderOnce();
+  const frame = t.captureCharFrame();
+  expect(frame).toContain("/compact");
+  expect(frame).toContain("/copy");
+  expect(frame).not.toContain("/explain");
+});
+
+// The popup closes on whitespace so the arrows go back to prompt history; a
+// popup that stayed open would hijack them for the rest of the line.
+test("closes the popup once arguments start", async () => {
+  const { port } = fakePort();
+  const t = await testRender(() => <App port={port} />, { width: 70, height: 16 });
+  await t.renderOnce();
+
+  await t.mockInput.typeText("/explain");
+  await t.renderOnce();
+  expect(t.captureCharFrame()).toContain("<path>");
+
+  await t.mockInput.typeText(" ");
+  await t.renderOnce();
+  expect(t.captureCharFrame()).not.toContain("<path>");
+});
+
+test("tab accepts the selected suggestion", async () => {
+  const { port, sent } = fakePort();
+  const t = await testRender(() => <App port={port} />, { width: 70, height: 16 });
+  await t.renderOnce();
+
+  await t.mockInput.typeText("/co");
+  await t.renderOnce();
+  t.mockInput.pressArrow("down");
+  await t.renderOnce();
+  t.mockInput.pressTab();
+  await t.renderOnce();
+
+  expect(t.captureCharFrame()).toContain("/copy");
+  t.mockInput.pressEnter();
+  await t.renderOnce();
+  // The trailing space is the point: arguments can follow it, and it is what
+  // closes the popup rather than leaving it matching its own result.
+  expect(sent.filter((command) => command.type === "prompt")).toEqual([{ type: "prompt", text: "/copy " }]);
+});
+
+// Enter must never be rewritten into an acceptance: a literal `/whatever`
+// prompt has to be sendable with the popup open.
+test("enter submits the typed text rather than the suggestion", async () => {
+  const { port, sent } = fakePort();
+  const t = await testRender(() => <App port={port} />, { width: 70, height: 16 });
+  await t.renderOnce();
+
+  await t.mockInput.typeText("/co");
+  await t.renderOnce();
+  t.mockInput.pressEnter();
+  await t.renderOnce();
+
+  expect(sent.filter((command) => command.type === "prompt")).toEqual([{ type: "prompt", text: "/co" }]);
 });

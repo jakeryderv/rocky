@@ -8,6 +8,14 @@ import type { InputRenderable, MouseEvent, ScrollBoxRenderable } from "@opentui/
 import { useKeyboard, usePaste, useRenderer } from "@opentui/solid";
 import type { SessionPort } from "@rocky/contract";
 import { createEffect, createMemo, createSignal, For, Show } from "solid-js";
+import {
+  applyCompletion,
+  clampSelection,
+  completionLabel,
+  completionQuery,
+  filterCommands,
+  moveSelection,
+} from "./model/completion.js";
 import { emptyHistory, newer, older, remember } from "./model/history.js";
 import { entryLines } from "./model/transcript.js";
 import { createSessionStore } from "./session-store.js";
@@ -19,6 +27,8 @@ export function App(props: { port: SessionPort; onQuit?: (() => void) | undefine
   const [pinned, setPinned] = createSignal(true);
   const [history, setHistory] = createSignal(emptyHistory());
   const [pending, setPending] = createSignal<string[]>([]);
+  const [draft, setDraft] = createSignal("");
+  const [selected, setSelected] = createSignal(0);
   let scroller: ScrollBoxRenderable | undefined;
   let input: InputRenderable | undefined;
   const renderer = useRenderer();
@@ -33,6 +43,32 @@ export function App(props: { port: SessionPort; onQuit?: (() => void) | undefine
     if (input) {
       input.value = text;
     }
+    // Mirrored rather than read back off the renderable: the completion popup
+    // has to react to programmatic edits (history, paste, accepting a
+    // suggestion) as well as to typing, and only typing raises `input`.
+    setDraft(text);
+  };
+
+  /**
+   * Suggestions for what is currently typed.
+   *
+   * Empty whenever completion does not apply, which is also what "the popup is
+   * closed" means — there is no separate open/closed flag to keep in sync.
+   */
+  const suggestions = createMemo(() => {
+    const query = completionQuery(draft());
+    return query === undefined ? [] : filterCommands(store.commands(), query);
+  });
+
+  createEffect(() => setSelected((current) => clampSelection(current, suggestions().length)));
+
+  const acceptCompletion = () => {
+    const command = suggestions()[selected()];
+    if (!command) {
+      return false;
+    }
+    showInInput(applyCompletion(command));
+    return true;
   };
 
   const submit = (value: string) => {
@@ -97,7 +133,19 @@ export function App(props: { port: SessionPort; onQuit?: (() => void) | undefine
       }
       return;
     }
+    // Tab accepts a suggestion; Enter deliberately does not. Enter always
+    // submits what is on screen, so a literal `/whatever` prompt can be sent
+    // while the popup is open instead of being silently rewritten.
+    if (key.name === "tab" && suggestions().length > 0) {
+      acceptCompletion();
+      return;
+    }
     if (key.name === "up" || key.name === "down") {
+      // While the popup is open the arrows drive it, not prompt history.
+      if (suggestions().length > 0) {
+        setSelected((current) => moveSelection(current, suggestions().length, key.name === "up" ? -1 : 1));
+        return;
+      }
       const current = input?.value ?? "";
       const move = key.name === "up" ? older(history(), current) : newer(history(), current);
       setHistory(move.state);
@@ -186,6 +234,20 @@ export function App(props: { port: SessionPort; onQuit?: (() => void) | undefine
         {status()}
       </text>
 
+      <Show when={suggestions().length > 0}>
+        <box style={{ flexDirection: "column", flexShrink: 0 }}>
+          <For each={suggestions()}>
+            {(command, index) => (
+              <text fg={index() === selected() ? "#ffffff" : "#888888"}>
+                {index() === selected() ? "› " : "  "}
+                {completionLabel(command)}
+                {command.description ? ` — ${command.description}` : ""}
+              </text>
+            )}
+          </For>
+        </box>
+      </Show>
+
       <Show when={pending().length > 0}>
         <text fg="#888888" style={{ flexShrink: 0 }}>
           + {pending().length} pasted line{pending().length === 1 ? "" : "s"}
@@ -197,8 +259,9 @@ export function App(props: { port: SessionPort; onQuit?: (() => void) | undefine
           input = element;
         }}
         focused
-        placeholder="Ask Rocky…   ↑ history · ctrl+c aborts, or quits when idle"
+        placeholder="Ask Rocky…   / commands · ↑ history · ctrl+c aborts, or quits when idle"
         style={{ flexShrink: 0 }}
+        on:input={(value: string) => setDraft(value)}
         on:enter={(value: string) => submit(value)}
       />
     </box>

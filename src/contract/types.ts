@@ -141,6 +141,38 @@ export interface ToolResultMessage {
 export type SessionMessage = UserMessage | AssistantMessage | ToolResultMessage;
 
 // ============================================================================
+// Slash commands
+// ============================================================================
+
+/** Where a slash command came from, reduced to what a client can act on. */
+export type SlashCommandSource = "extension" | "prompt" | "skill";
+
+/** Which resource tree a command was discovered in. */
+export type SlashCommandScope = "user" | "project" | "temporary";
+
+/**
+ * A command a client can offer for `/name` invocation.
+ *
+ * Invocation is not a separate command: sending the text as a `prompt` is what
+ * runs it, because the core dispatches extension commands and expands skills
+ * and prompt templates on the prompt path. This type is therefore discovery
+ * only — everything a completion popup needs and nothing more.
+ *
+ * Deliberately excludes the core's `sourceInfo` file paths. A client needs to
+ * tell two same-named commands apart, which `scope` does; it does not need a
+ * filesystem path, and a remote client should not be handed one.
+ */
+export interface SlashCommand {
+  /** Without the leading slash. Skills arrive prefixed as `skill:<name>`. */
+  name: string;
+  description?: string;
+  source: SlashCommandSource;
+  /** Shape of the arguments, when the source declares one. */
+  argumentHint?: string;
+  scope?: SlashCommandScope;
+}
+
+// ============================================================================
 // State
 // ============================================================================
 
@@ -183,6 +215,7 @@ export type SessionCommand =
   | { id?: string | undefined; type: "get_messages" }
   | { id?: string | undefined; type: "set_model"; provider: string; modelId: string }
   | { id?: string | undefined; type: "get_available_models" }
+  | { id?: string | undefined; type: "get_commands" }
   | { id?: string | undefined; type: "set_thinking_level"; level: ThinkingLevel }
   | { id?: string | undefined; type: "set_steering_mode"; mode: QueueMode }
   | { id?: string | undefined; type: "set_follow_up_mode"; mode: QueueMode }
@@ -212,6 +245,13 @@ export type CommandResult =
       models: ModelRef[];
     }
   | { type: "command_result"; id?: string | undefined; command: "set_model"; ok: true; model: ModelRef }
+  | {
+      type: "command_result";
+      id?: string | undefined;
+      command: "get_commands";
+      ok: true;
+      commands: SlashCommand[];
+    }
   /**
    * Acknowledgement for commands that return no payload.
    *
@@ -225,7 +265,7 @@ export type CommandResult =
       id?: string | undefined;
       command: Exclude<
         SessionCommandType,
-        "get_state" | "get_messages" | "get_available_models" | "set_model"
+        "get_state" | "get_messages" | "get_available_models" | "set_model" | "get_commands"
       >;
       ok: true;
     }

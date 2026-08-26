@@ -43,6 +43,11 @@ other 19 live in `core/` and `cli/` and need real work (see phase C).
 - **First OpenTUI + Solid client slice** (`packages/client`) over a `SessionPort`, with a headless Bun render
   suite, a root-level client smoke, and a separate Bun CI job. See ADR 0005. Scrollback, incremental tool
   output, a working quit path, prompt history, and multi-line paste have since landed.
+- **Slash-command discovery** ([#19](https://github.com/jakeryderv/rocky/issues/19)). `get_commands` and a
+  `SlashCommand` shape in the contract, assembled in the client host from the three registries the harness
+  merges in a private closure, with a completion popup in the client. Invocation rides the existing `prompt`
+  path. Built-in commands stay out: the core's builtins are `pi-tui` screens, so a command the client offers
+  is the client's to implement.
 - **`state_changed` is a push** ([#25](https://github.com/jakeryderv/rocky/issues/25)). The adapter emits it
   whenever its projected state differs, so the client no longer re-reads `get_state` on turn boundaries and
   after every command. One cold-start `get_state` remains.
@@ -51,24 +56,22 @@ other 19 live in `core/` and `cli/` and need real work (see phase C).
 
 ## Phase A — grow the client to daily use
 
-The contract exposes 13 commands; the harness RPC protocol has about 30. That gap, plus missing UI, is the
-work. Blocking items first.
+The contract exposes 14 commands; the harness RPC protocol has 32. That gap, plus missing UI, is the work.
+Blocking items first.
 
 Phase A is the active phase, so it is also tracked as [open issues](https://github.com/jakeryderv/rocky/issues?q=is%3Aopen+label%3Aphase-a).
 Later phases stay narrative here until they become active. When an issue's scope changes, change this file
 with it.
 
-1. **Slash commands** ([#19](https://github.com/jakeryderv/rocky/issues/19)). `get_commands` exists in the harness RPC protocol but not the contract; without it
-   there is no `/model`, `/compact`, or skill invocation from the client.
-2. **Auth and login** ([#20](https://github.com/jakeryderv/rocky/issues/20)). The hardest gap: auth was never in the RPC protocol at all. It lives only in
+1. **Auth and login** ([#20](https://github.com/jakeryderv/rocky/issues/20)). The hardest gap: auth was never in the RPC protocol at all. It lives only in
    `modes/interactive` (`login-dialog.ts`, `oauth-selector.ts`) and the `rocky auth` subcommand, so the
    client cannot configure a provider. Shell out to `rocky auth` first; a Rocky-owned auth surface in the
    contract is the real answer.
-3. **Model switcher UI** ([#21](https://github.com/jakeryderv/rocky/issues/21)). `set_model` and `get_available_models` are already in the contract with no UI on
+2. **Model switcher UI** ([#21](https://github.com/jakeryderv/rocky/issues/21)). `set_model` and `get_available_models` are already in the contract with no UI on
    top of them.
-4. **Session list, resume, and new session** ([#22](https://github.com/jakeryderv/rocky/issues/22)). Needs `switch_session`, `new_session`, `get_entries`, and
+3. **Session list, resume, and new session** ([#22](https://github.com/jakeryderv/rocky/issues/22)). Needs `switch_session`, `new_session`, `get_entries`, and
    `get_tree` added to the contract.
-5. **Multi-line input editing** ([#23](https://github.com/jakeryderv/rocky/issues/23)). Today a pasted block is held aside rather than editable.
+4. **Multi-line input editing** ([#23](https://github.com/jakeryderv/rocky/issues/23)). Today a pasted block is held aside rather than editable.
 
 Then, needed but not blocking: bash passthrough ([#24](https://github.com/jakeryderv/rocky/issues/24));
 compaction and steering/follow-up queue UI over

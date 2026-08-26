@@ -10,6 +10,7 @@ import type {
   SessionCommand,
   SessionEvent,
   SessionState,
+  SlashCommand,
   Usage,
 } from "./types.js";
 
@@ -48,6 +49,18 @@ export const FIXTURE_STATE: SessionState = {
   pendingMessageCount: 0,
 };
 
+export const FIXTURE_SLASH_COMMANDS: SlashCommand[] = [
+  { name: "review", description: "Review the working tree", source: "extension", scope: "project" },
+  {
+    name: "explain",
+    description: "Explain a file",
+    source: "prompt",
+    argumentHint: "<path>",
+    scope: "user",
+  },
+  { name: "skill:ship", description: "Take the branch to merged", source: "skill", scope: "project" },
+];
+
 export const FIXTURE_COMMANDS: SessionCommand[] = [
   { id: "c1", type: "prompt", text: "explain this repo" },
   {
@@ -64,6 +77,11 @@ export const FIXTURE_COMMANDS: SessionCommand[] = [
   { id: "c8", type: "set_steering_mode", mode: "one-at-a-time" },
   { id: "c9", type: "compact", customInstructions: "keep the design decisions" },
   { id: "c10", type: "set_auto_compaction", enabled: false },
+  { id: "c11", type: "get_commands" },
+  { id: "c12", type: "follow_up", text: "and then run the tests" },
+  { id: "c13", type: "get_messages" },
+  { id: "c14", type: "get_available_models" },
+  { id: "c15", type: "set_follow_up_mode", mode: "all" },
 ];
 
 export const FIXTURE_EVENTS: SessionEvent[] = [
@@ -134,6 +152,13 @@ export const FIXTURE_COMMAND_RESULTS: CommandResult[] = [
   { type: "command_result", id: "cX", command: "get_available_models", ok: true, models: [FIXTURE_MODEL] },
   { type: "command_result", id: "c4", command: "abort", ok: true },
   { type: "command_result", id: "c9", command: "compact", ok: false, error: "nothing to compact" },
+  {
+    type: "command_result",
+    id: "c11",
+    command: "get_commands",
+    ok: true,
+    commands: FIXTURE_SLASH_COMMANDS,
+  },
 ];
 
 /** Every `MessageDelta` variant, so the delta union is covered exhaustively too. */

@@ -12,6 +12,9 @@ import type {
   ModelRef,
   SessionEvent,
   SessionMessage,
+  SlashCommand,
+  SlashCommandScope,
+  SlashCommandSource,
   StopReason,
   ThinkingLevel,
   ToolResultBlock,
@@ -54,6 +57,51 @@ export function toModelRef(model: PiModelLike | undefined): ModelRef | undefined
     ref.supportedThinkingLevels = [...levels];
   }
   return ref;
+}
+
+/**
+ * A harness slash command as the three registries describe it.
+ *
+ * The field names follow the harness's own merged shape
+ * (`agent-session.ts` `getCommands()`), so the caller assembling this hands
+ * over registry values rather than something it invented.
+ */
+interface PiSlashCommandLike {
+  name: string;
+  description?: string | undefined;
+  source: string;
+  argumentHint?: string | undefined;
+  /** The harness's `SourceInfo`. Only `scope` crosses into the contract. */
+  sourceInfo?: { scope?: string; [key: string]: unknown } | undefined;
+}
+
+const SLASH_COMMAND_SOURCES: readonly SlashCommandSource[] = ["extension", "prompt", "skill"];
+const SLASH_COMMAND_SCOPES: readonly SlashCommandScope[] = ["user", "project", "temporary"];
+
+/**
+ * Reduce a harness command to the contract shape.
+ *
+ * Returns undefined for a command whose source the contract does not model,
+ * rather than widening the union: an unknown source is a harness concept a
+ * client has no way to render, and dropping it keeps `source` an enum a client
+ * can switch on exhaustively.
+ */
+export function toSlashCommand(command: PiSlashCommandLike): SlashCommand | undefined {
+  if (!(SLASH_COMMAND_SOURCES as readonly string[]).includes(command.source)) {
+    return undefined;
+  }
+  const mapped: SlashCommand = { name: command.name, source: command.source as SlashCommandSource };
+  if (command.description !== undefined) {
+    mapped.description = command.description;
+  }
+  if (command.argumentHint !== undefined) {
+    mapped.argumentHint = command.argumentHint;
+  }
+  const scope = command.sourceInfo?.scope;
+  if (scope !== undefined && (SLASH_COMMAND_SCOPES as readonly string[]).includes(scope)) {
+    mapped.scope = scope as SlashCommandScope;
+  }
+  return mapped;
 }
 
 export function toUsage(usage: Partial<Usage> | undefined): Usage {
