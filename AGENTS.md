@@ -1,5 +1,35 @@
 # Rocky agent guide
 
+Read this before exploring. Everything below was expensive to rediscover from the source.
+
+## Orientation
+
+Rocky replaces the presentation half of a forked coding agent with its own client. Pi ships as a stack;
+Rocky copied the top of it and depends on the rest.
+
+```text
+packages/harness        COPY of @earendil-works/pi-coding-agent v0.84.2 — Rocky-owned, 57.7k lines
+  ├── pi-tui            60 files. Dies with modes/interactive (roadmap phase C)
+  ├── pi-agent-core     33 files. Agent loop + core tools. Fork only when subagent work needs loop control
+  └── pi-ai             50 files. Providers/models/auth. Never fork — it is pure upstream churn
+```
+
+The fork is 98% untouched upstream: 21 source files changed, 131 insertions, 1,344 deletions, almost all
+removals (self-update, version check, fd/rg downloader, install reporting) plus `.pi` → `.rocky` renames.
+Rocky has not diverged from Pi yet — it bought the option to.
+
+**Two entry points, one session.** They diverge above `createAgentSessionServices` and are identical below it:
+
+| | `rocky` (Node) | `npm run client` (Bun) |
+| --- | --- | --- |
+| Entry | `src/cli.ts` → `runRocky` → `harness.main()` | `scripts/client.mjs` → `src/client-host/tui-entry.ts` |
+| UI | inherited pi-tui `InteractiveMode` | `packages/client` (OpenTUI + Solid) over the contract |
+| Gets | arg parsing, subcommands, auth, session picker, `configureHttpDispatcher()`, `AI_AGENT` env | none of it (see the carried debt in `docs/roadmap.md`) |
+
+**The seam.** `packages/client` imports only `@rocky/contract`. `src/adapter/` translates Pi types to it, and
+`src/client-host/create-session-port.ts` is the single file that knows both vocabularies. Keep it that way:
+that boundary is what makes the harness replaceable.
+
 ## Required local gate
 
 Run `npm run verify` before reporting implementation work complete (it includes the harness workspace's own
@@ -38,6 +68,31 @@ attribution lines. Reference issues with `Closes #N`.
 
 Open issues track the active roadmap phase only; `docs/roadmap.md` holds the plan and the reasoning. Keep
 them consistent: when an issue's scope changes, the roadmap changes with it.
+
+`/ship` runs the whole sequence: gates, changelog and roadmap check, push, PR, CI wait, squash-merge, sync.
+
+A `PreToolUse` hook refuses edits while HEAD is on `main`. That is deliberate — `main` rejects direct pushes,
+so work started there has to be moved anyway. Branch first.
+
+## When to fan out, and when not to
+
+This repo is small and centralized, so parallel *editing* mostly produces merge conflicts rather than speed.
+`packages/client` is three files; issues #19, #21, #23, #26 and #27 all edit `App.tsx`, and #24, #25 and #28
+all edit `src/contract/types.ts`. Run those sequentially.
+
+Fan out on investigation and review instead:
+
+- **`Explore` agents** for "where does X live" across the 57.7k-line harness. This is the highest-value use —
+  the alternative is a dozen greps in the main context.
+- **Parallel review before a PR.** Independent adversarial passes already caught six real contract defects
+  (ADR 0004). Worth it on anything touching the contract or trust.
+- **Per issue: fan out to map the surface, then edit in one place.** Investigation parallelizes; the edit does
+  not.
+- **Worktree isolation** only for genuinely disjoint files — for example a debt issue (#29, #30) alongside
+  client work.
+
+Use context7 for OpenTUI (`0.5.8`) and Solid (`1.9.12`) APIs rather than recalling them. Both are fast-moving
+and pinned exactly; guessing an API here costs more than the lookup.
 
 ## Invariants
 

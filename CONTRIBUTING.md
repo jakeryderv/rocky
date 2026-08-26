@@ -59,4 +59,8 @@ bypasses it; CI does not.
 - Keep changes small, documented, credential-free, and covered by deterministic tests.
 - Do not commit generated artifacts (`dist/`, `coverage/`, `reports/`) or secrets.
 - Keep `npm-shrinkwrap.json` current when dependencies change.
-- The invariants in [`AGENTS.md`](AGENTS.md) apply to human contributors too.
+- The invariants in [`AGENTS.md`](AGENTS.md) apply to human contributors too. `CLAUDE.md` is a symlink to it,
+  so there is one file to maintain; Pi's context discovery takes the first match per directory, so the two
+  never load twice.
+- Claude Code project config lives in `.claude/`: a `PreToolUse` hook refusing edits on `main`, and `/ship`,
+  which runs the whole gate-to-merge sequence.
