@@ -256,10 +256,13 @@ export async function createRockySessionPort(
       // `rocky` too — one theme choice, not one per front end.
       themes: {
         list: () => harness.getAvailableThemes(),
+        // The setting is unset until someone chooses a theme, and the core
+        // then paints with its default — so reporting "" would leave the
+        // picker unable to mark what is actually in use.
         active: () =>
           (
             liveSession() as { settingsManager?: { getTheme(): string | undefined } }
-          ).settingsManager?.getTheme() ?? "",
+          ).settingsManager?.getTheme() ?? harness.getDefaultTheme(),
         resolve: (name?: string) => harness.getResolvedThemeColors(name),
         set: (name: string) => {
           (liveSession() as { settingsManager?: { setTheme(name: string): void } }).settingsManager?.setTheme(

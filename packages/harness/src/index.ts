@@ -392,6 +392,7 @@ export {
 // Theme utilities for custom tools and extensions
 export {
 	getAvailableThemes,
+	getDefaultTheme,
 	getLanguageFromPath,
 	getMarkdownTheme,
 	getResolvedThemeColors,
