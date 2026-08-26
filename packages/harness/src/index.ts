@@ -5,6 +5,8 @@ export { type Args, parseArgs } from "./cli/args.ts";
 // Config paths
 export {
 	CONFIG_DIR_NAME,
+	ENV_SESSION_DIR,
+	expandTildePath,
 	getAgentDir,
 	getDocsPath,
 	getExamplesPath,
@@ -24,6 +26,7 @@ export {
 	type SessionStats,
 } from "./core/agent-session.ts";
 export { readStoredCredential } from "./core/auth-storage.ts";
+export { normalizePath } from "./utils/paths.ts";
 // HTTP transport setup. `main()` performs these for the CLI; a host that builds
 // a session without `main()` has to perform them itself or it silently runs
 // with no proxy agent and no idle timeout.

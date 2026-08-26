@@ -157,6 +157,34 @@ export function applyRockyDiscoveryPolicy(args: readonly string[]): string[] {
   return isolatedArgs;
 }
 
+/**
+ * Where session transcripts go, in the order the CLI resolves it.
+ *
+ * Pure and injected rather than reading the environment itself, so both entry
+ * points can be proved to agree without a session. `undefined` means "the
+ * default under the agent directory" — the same thing an unset setting means to
+ * the harness.
+ *
+ * The precedence is the CLI's, not a new one: an explicit flag beats the
+ * environment, which beats the stored setting. Getting this wrong does not
+ * fail — it silently writes a user's history somewhere else.
+ */
+export function resolveSessionDir(input: {
+  flag?: string | undefined;
+  env?: string | undefined;
+  setting?: string | undefined;
+  normalize: (path: string) => string;
+  expandTilde: (path: string) => string;
+}): string | undefined {
+  if (input.flag) {
+    return input.normalize(input.flag);
+  }
+  if (input.env) {
+    return input.expandTilde(input.env);
+  }
+  return input.setting;
+}
+
 /** Map Rocky-named environment controls onto the harness's compatibility variables. */
 export function prepareRockyEnvironment(): void {
   if (isTruthy(process.env["ROCKY_OFFLINE"])) {

@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- **Fixed: the client wrote sessions to a different directory than `rocky` did.** The client host left the
+  session directory to the default while the CLI resolved it from `--session-dir`, then
+  `ROCKY_CODING_AGENT_SESSION_DIR`, then the stored setting. Getting this wrong never failed — it silently
+  put a user's history somewhere else — so the precedence is now shared and pinned by a test. `--offline`
+  likewise reaches the client path, which previously ignored it because it is read straight out of argv.
+
 - **Fixed: the client had no HTTP idle timeout and no proxy agent.** `main()` configures undici's dispatcher
   for the CLI; the client host built a session without going through `main()` and so ran with Node's default
   agent — no proxy support, and nothing to end a stalled provider stream. It now configures the transport

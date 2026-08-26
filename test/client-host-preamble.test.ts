@@ -9,7 +9,7 @@
  */
 import { describe, expect, it, vi } from "vitest";
 import { runRockyClient } from "../src/client-host/tui-entry.js";
-import { applyRockyProcessIdentity } from "../src/runtime/pi-runtime.js";
+import { applyRockyProcessIdentity, resolveSessionDir } from "../src/runtime/pi-runtime.js";
 
 describe("Rocky process identity", () => {
   it("marks the process for every tool that branches on it", () => {
@@ -42,5 +42,44 @@ describe("client launch preconditions", () => {
   // precondition — no terminal means the client cannot work on any runtime.
   it("reports the missing terminal before the missing runtime", async () => {
     await expect(runRockyClient()).rejects.not.toThrow(/requires Bun/);
+  });
+});
+
+/**
+ * Where session transcripts go.
+ *
+ * The client host used to leave this to the default while `rocky` resolved it
+ * from a flag, an environment variable, or a setting. Getting it wrong does not
+ * fail — it silently writes a user's history somewhere else — so the precedence
+ * is pinned rather than assumed.
+ */
+describe("resolveSessionDir", () => {
+  const helpers = {
+    normalize: (path: string) => `normalized:${path}`,
+    expandTilde: (path: string) => path.replace("~", "/home/user"),
+  };
+
+  it("prefers an explicit flag over everything", () => {
+    expect(resolveSessionDir({ flag: "/flag", env: "/env", setting: "/setting", ...helpers })).toBe(
+      "normalized:/flag",
+    );
+  });
+
+  it("prefers the environment over the stored setting", () => {
+    expect(resolveSessionDir({ env: "~/env", setting: "/setting", ...helpers })).toBe("/home/user/env");
+  });
+
+  it("falls back to the stored setting", () => {
+    expect(resolveSessionDir({ setting: "/setting", ...helpers })).toBe("/setting");
+  });
+
+  // Undefined means "the default under the agent directory", which is what an
+  // unset setting already means to the harness.
+  it("reports nothing when nothing is configured", () => {
+    expect(resolveSessionDir({ ...helpers })).toBeUndefined();
+  });
+
+  it("ignores empty values rather than treating them as a choice", () => {
+    expect(resolveSessionDir({ flag: "", env: "", setting: "/setting", ...helpers })).toBe("/setting");
   });
 });

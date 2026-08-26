@@ -10,7 +10,15 @@
 import { applyRockyProcessIdentity } from "../runtime/pi-runtime.js";
 import { createRockySessionPort } from "./create-session-port.js";
 
-export async function runRockyClient(options: { cwd?: string } = {}): Promise<void> {
+export interface RunRockyClientOptions {
+  cwd?: string;
+  /** As `--session-dir` does for the CLI. */
+  sessionDir?: string;
+  /** As `--offline` does for the CLI. */
+  offline?: boolean;
+}
+
+export async function runRockyClient(options: RunRockyClientOptions = {}): Promise<void> {
   // Checked before the runtime, because it is the more fundamental
   // precondition: no terminal means the client cannot work on any runtime,
   // whereas the Bun requirement is specific to the renderer.
@@ -36,6 +44,13 @@ export async function runRockyClient(options: { cwd?: string } = {}): Promise<vo
   // Before the session exists: these reach every bash subprocess the agent runs.
   applyRockyProcessIdentity();
 
+  // `main()` reads `--offline` straight out of argv, which a host that never
+  // sees argv cannot do. Mapping it to the environment control is what makes
+  // the flag mean the same thing on both paths.
+  if (options.offline) {
+    process.env["PI_OFFLINE"] = "1";
+  }
+
   // Specifiers are held in variables so the Node typecheck/build does not try to
   // resolve them: the preload has no Node type declarations, and the client
   // entry is .tsx, which the root program has no `jsx` setting for. Both resolve
@@ -46,7 +61,10 @@ export async function runRockyClient(options: { cwd?: string } = {}): Promise<vo
   // Registers babel-preset-solid. Must precede the client import below.
   await import(preloadSpecifier);
 
-  const { port, dispose } = await createRockySessionPort(options);
+  const { port, dispose } = await createRockySessionPort({
+    ...(options.cwd !== undefined ? { cwd: options.cwd } : {}),
+    ...(options.sessionDir !== undefined ? { sessionDir: options.sessionDir } : {}),
+  });
   let disposed = false;
   const disposeOnce = () => {
     if (!disposed) {

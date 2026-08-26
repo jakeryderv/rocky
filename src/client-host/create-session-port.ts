@@ -20,6 +20,7 @@ import {
   buildRockySessionOptions,
   ensurePrivateDirectory,
   loadPiRuntime,
+  resolveSessionDir,
 } from "../runtime/pi-runtime.js";
 import { collectSlashCommands, type SlashCommandSources } from "./collect-slash-commands.js";
 
@@ -90,6 +91,8 @@ export function describeProviders(session: ProviderDirectorySources): Record<str
 
 export interface CreateSessionPortOptions {
   cwd?: string;
+  /** Overrides the resolved session directory, as `--session-dir` does for the CLI. */
+  sessionDir?: string;
 }
 
 export interface SessionPortHandle {
@@ -196,8 +199,21 @@ export async function createRockySessionPort(
       return { ...created, services, diagnostics: services.diagnostics };
     };
 
-    // Default session directory; SessionManager.create resolves it from cwd.
-    const sessionManager = harness.SessionManager.create(cwd);
+    // Resolved the way the CLI resolves it, rather than left to the default.
+    // `main()` builds a settings manager purely for this lookup, because the
+    // session directory has to be known before the session exists — and the
+    // runtime's own settings manager does not exist until after it. Getting
+    // this wrong does not fail: it silently writes the user's history
+    // somewhere other than where `rocky` puts it.
+    const startupSettings = harness.SettingsManager.create(cwd, agentDir);
+    const sessionDir = resolveSessionDir({
+      flag: options.sessionDir,
+      env: process.env[harness.ENV_SESSION_DIR],
+      setting: startupSettings.getSessionDir(),
+      normalize: (path) => harness.normalizePath(path),
+      expandTilde: (path) => harness.expandTildePath(path),
+    });
+    const sessionManager = harness.SessionManager.create(cwd, sessionDir);
     const runtime = await harness.createAgentSessionRuntime(
       createRuntime as never,
       {
