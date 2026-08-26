@@ -24,6 +24,10 @@ export {
 	type SessionStats,
 } from "./core/agent-session.ts";
 export { readStoredCredential } from "./core/auth-storage.ts";
+// HTTP transport setup. `main()` performs these for the CLI; a host that builds
+// a session without `main()` has to perform them itself or it silently runs
+// with no proxy agent and no idle timeout.
+export { applyHttpProxySettings, configureHttpDispatcher } from "./core/http-dispatcher.ts";
 // Compaction
 export {
 	type BranchPreparation,

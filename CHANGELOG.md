@@ -2,6 +2,21 @@
 
 ## Unreleased
 
+- **Fixed: the client had no HTTP idle timeout and no proxy agent.** `main()` configures undici's dispatcher
+  for the CLI; the client host built a session without going through `main()` and so ran with Node's default
+  agent — no proxy support, and nothing to end a stalled provider stream. It now configures the transport
+  from the same settings, at the same point in the session factory.
+
+- **Fixed: a non-interactive client launch hung instead of failing.** The renderer takes the terminal over on
+  start-up, so with stdout piped it wrote an alternate-screen escape sequence into the pipe and then waited
+  for input that could never arrive. It now refuses immediately, and names the non-interactive alternatives.
+  The terminal is checked before the Bun requirement, because no terminal means the client cannot work on any
+  runtime.
+
+- **The process identity is shared between the two entry points.** `AI_AGENT`, `PI_CODING_AGENT` and
+  `ROCKY_CODING_AGENT` are inherited by every bash subprocess the agent runs, so a tool that branches on "am
+  I inside a coding agent" used to behave differently depending on which front end started the session.
+
 - **Security: opening an image no longer runs code from the working directory under Bun.** The harness picks a
   worker entrypoint by relative string path when Bun is the runtime, because a Bun *compiled executable*
   resolves worker entrypoints that way. The guard tested "is Bun the runtime" rather than "is this a compiled
