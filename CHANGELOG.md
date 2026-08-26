@@ -2,6 +2,22 @@
 
 ## Unreleased
 
+- **CI now runs the root suite under Bun as well as Node.** Phase B moves the shipped runtime to Bun, so the
+  suite has to say what Bun breaks before the default flips. Vitest itself runs fine under Bun; what differs
+  is the code under test. Node stays the required gate — the new job is a second opinion, not a replacement.
+
+- **Fixed: the suite wrote to the developer's real `~/.rocky/agent` under Bun.** Two tests assumed Node.
+  `getAgentDir()` falls back to `os.homedir()`, which reads the user database rather than a mutated
+  `process.env.HOME` — so a test that pointed HOME at a fixture silently resolved to the real directory and
+  wrote there. That default is now proved in a child process, which gets a genuine HOME, and the in-process
+  tests name the directory explicitly. The Bun job asserts afterwards that nothing was written, so the
+  invariant is checked rather than assumed.
+
+- **Test child processes now run on the suite's own runtime.** They asked for `process.execPath`, which is
+  `bun` under Bun — and under `bun --bun` even the name `node` on PATH is a shim for Bun, so forcing Node was
+  not possible anyway. Running the CLI on whichever runtime the suite is exercising is also the more useful
+  test, and it is what proves the Rocky CLI works under Bun at all.
+
 - **`rocky` can now tell which front end an invocation belongs to** — though it still always chooses the
   harness. The router is pure, driven by the harness's own argument parser rather than by substring matching
   on argv, and lands behind a single flag so that flipping the default later is one edit and reverting it is

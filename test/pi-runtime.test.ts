@@ -1,3 +1,4 @@
+import { spawnSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
@@ -11,6 +12,8 @@ import {
   prepareRockyEnvironment,
   requiresCodingRuntime,
 } from "../src/runtime/pi-runtime.js";
+import { credentialFreeEnvironment } from "./credential-free-environment.js";
+import { cliCommand } from "./node-runner.js";
 
 let fixtureRoot: string;
 let homeDir: string;
@@ -103,8 +106,14 @@ beforeAll(async () => {
   mkdirSync(projectDir, { recursive: true });
 
   process.env["HOME"] = homeDir;
+  // Named explicitly rather than left to derive from HOME. `getAgentDir()`
+  // falls back to `os.homedir()`, which under Bun ignores a mutated
+  // `process.env.HOME` — so relying on the fallback here would silently
+  // resolve to the developer's real `~/.rocky/agent` and write to it. The
+  // fallback itself is covered below, in a child process that gets a real
+  // HOME in its environment.
+  process.env["ROCKY_CODING_AGENT_DIR"] = agentDir;
   process.env["PI_CODING_AGENT_DIR"] = join(fixtureRoot, "pi-global-poison");
-  delete process.env["ROCKY_CODING_AGENT_DIR"];
   prepareRockyEnvironment();
   pi = await loadPiRuntime();
 });
@@ -132,8 +141,33 @@ describe("Rocky Pi composition boundary", () => {
     const override = join(fixtureRoot, "rocky-override");
     process.env["ROCKY_CODING_AGENT_DIR"] = override;
     expect(pi.getAgentDir()).toBe(override);
-    delete process.env["ROCKY_CODING_AGENT_DIR"];
+    process.env["ROCKY_CODING_AGENT_DIR"] = agentDir;
     expect(pi.getAgentDir()).toBe(agentDir);
+
+    // The Pi-named variable is poison, not an alias: honouring it would let a
+    // stray Pi install redirect Rocky's global state.
+    expect(process.env["PI_CODING_AGENT_DIR"]).toBeDefined();
+    expect(pi.getAgentDir()).not.toContain("pi-global-poison");
+  });
+
+  /**
+   * The default location, proved where it can be: in a child process.
+   *
+   * `getAgentDir()` falls back to `os.homedir()`, which reads the real user
+   * database rather than `process.env.HOME` under Bun. A child gets a genuine
+   * HOME in its environment, so this holds on both runtimes — and it is the
+   * assertion that actually matters, since it is what a user gets.
+   */
+  it("defaults the global directory to HOME/.rocky/agent", () => {
+    const home = join(fixtureRoot, "default-home");
+    mkdirSync(home, { recursive: true });
+    const [command, commandArgs] = cliCommand(join(resolve("."), "test/fixtures/print-agent-dir.ts"), []);
+    const probe = spawnSync(command, commandArgs, {
+      encoding: "utf8",
+      env: credentialFreeEnvironment({ HOME: home, USERPROFILE: home }),
+    });
+    expect(probe.status, probe.stderr).toBe(0);
+    expect(probe.stdout.trim()).toBe(join(home, ".rocky", "agent"));
   });
 
   it("disables cross-harness skill discovery but keeps standard context-file discovery", () => {

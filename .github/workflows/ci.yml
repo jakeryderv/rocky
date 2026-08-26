@@ -65,6 +65,61 @@ jobs:
           if-no-files-found: ignore
           retention-days: 5
 
+  # Phase B moves the shipped runtime to Bun, so the suites have to say what
+  # Bun breaks before the default flips. Vitest itself runs under Bun; what
+  # differs is the code under test. Node stays the required gate above — this
+  # job is the second opinion, not a replacement.
+  verify-bun:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      PI_OFFLINE: "1"
+      PI_TELEMETRY: "0"
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: .node-version
+          cache: npm
+          cache-dependency-path: npm-shrinkwrap.json
+
+      - name: Set up Bun
+        uses: oven-sh/setup-bun@735343b667d3e6f658f44d0eca948eb6282f2b76 # v2.0.2
+        with:
+          bun-version: 1.4.0
+
+      - name: Install system search tools
+        run: sudo apt-get update -q && sudo apt-get install -y --no-install-recommends fd-find ripgrep
+
+      - name: Install dependencies
+        run: npm ci --ignore-scripts
+
+      - name: Build
+        run: npm run build
+
+      - name: Record a baseline for the agent directory check
+        run: |
+          mkdir -p "$HOME/.rocky"
+          touch /tmp/agent-dir-baseline
+
+      - name: Test root suite under Bun
+        run: bun x --bun vitest run
+
+      # A suite that writes to the developer's real agent directory violates a
+      # stated invariant, and it did until the two Node-assuming tests were
+      # fixed. Proven rather than assumed.
+      - name: Assert the run left the real agent directory alone
+        run: |
+          touched="$(find "$HOME/.rocky" -newer /tmp/agent-dir-baseline 2>/dev/null || true)"
+          if [ -n "$touched" ]; then
+            echo "The Bun run wrote to the real agent directory:" >&2
+            echo "$touched" >&2
+            exit 1
+          fi
+
   # The client renders only under Bun: OpenTUI's native FFI has no Node backend
   # on our baseline. Kept a separate job so the Node gate stays Node-only.
   client:

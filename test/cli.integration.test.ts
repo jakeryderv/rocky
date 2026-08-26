@@ -5,9 +5,9 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { credentialFreeEnvironment } from "./credential-free-environment.js";
+import { cliCommand } from "./node-runner.js";
 
 const repositoryRoot = fileURLToPath(new URL("../", import.meta.url));
-const tsxLoader = import.meta.resolve("tsx");
 let fixtureRoot: string;
 let projectDir: string;
 
@@ -29,7 +29,10 @@ afterAll(() => {
 });
 
 function runRocky(args: string[]) {
-  return spawnSync(process.execPath, ["--import", tsxLoader, join(repositoryRoot, "src/cli.ts"), ...args], {
+  // The CLI runs on whichever runtime the suite is running on. Forcing it back
+  // onto Node would make the Bun job answer a question nobody asked.
+  const [command, commandArgs] = cliCommand(join(repositoryRoot, "src/cli.ts"), args);
+  return spawnSync(command, commandArgs, {
     cwd: projectDir,
     encoding: "utf8",
     env: credentialFreeEnvironment({
