@@ -4,8 +4,9 @@ import {
   emptyTranscript,
   entryLines,
   type TranscriptState,
+  transcriptFromMessages,
 } from "../packages/client/src/model/transcript.js";
-import type { SessionEvent } from "../src/contract/index.js";
+import type { SessionEvent, SessionMessage } from "../src/contract/index.js";
 
 function run(events: SessionEvent[], from: TranscriptState = emptyTranscript()): TranscriptState {
   return events.reduce(applyEvent, from);
@@ -311,5 +312,96 @@ describe("transcript reduction", () => {
     const after = applyEvent(before, { type: "queue_update", steering: ["a"], followUp: [] });
     expect(after).toEqual(before);
     expect(before.entries).toHaveLength(0);
+  });
+});
+
+// Needed the moment the client attaches to a session that already has history —
+// a resumed session, or any client that connects mid-conversation. Without it
+// the transcript starts empty over a conversation the core can still see.
+describe("rebuilding a transcript from message history", () => {
+  const model = { provider: "openai-codex", id: "gpt-5.5" };
+  const usage = {
+    input: 10,
+    output: 5,
+    cacheRead: 0,
+    cacheWrite: 0,
+    totalTokens: 15,
+    cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+  };
+
+  it("produces settled entries for the user and assistant turns", () => {
+    const messages: SessionMessage[] = [
+      { role: "user", content: [{ type: "text", text: "hello" }], timestamp: 1 },
+      {
+        role: "assistant",
+        content: [{ type: "text", text: "hi" }],
+        model,
+        usage,
+        stopReason: "stop",
+        timestamp: 2,
+      },
+    ];
+    const state = transcriptFromMessages(messages);
+    expect(state.entries.map((entry) => entry.role)).toEqual(["user", "assistant"]);
+    expect(state.entries.every((entry) => entry.complete)).toBe(true);
+    expect(state.usage).toEqual(usage);
+    expect(state.streaming).toBe(false);
+  });
+
+  // Same rule as the live path: a tool result renders under its call, not as an
+  // entry of its own.
+  it("folds tool results into the index rather than making entries", () => {
+    const state = transcriptFromMessages([
+      {
+        role: "tool_result",
+        content: [{ type: "tool_result", toolCallId: "call_1", content: "# Rocky" }],
+        timestamp: 3,
+      },
+    ]);
+    expect(state.entries).toEqual([]);
+    expect(state.toolResults["call_1"]?.content).toBe("# Rocky");
+  });
+
+  // An aborted or failed turn reports an all-zero usage, which would blank a
+  // counter the user was reading.
+  it("does not take usage from a failed or aborted turn", () => {
+    const state = transcriptFromMessages([
+      {
+        role: "assistant",
+        content: [{ type: "text", text: "ok" }],
+        model,
+        usage,
+        stopReason: "stop",
+        timestamp: 1,
+      },
+      {
+        role: "assistant",
+        content: [],
+        model,
+        usage: { ...usage, totalTokens: 0, input: 0, output: 0 },
+        stopReason: "aborted",
+        timestamp: 2,
+      },
+    ]);
+    expect(state.usage?.totalTokens).toBe(15);
+  });
+
+  it("carries a failed turn's message onto its entry", () => {
+    const state = transcriptFromMessages([
+      {
+        role: "assistant",
+        content: [],
+        model,
+        usage,
+        stopReason: "error",
+        errorMessage: "provider returned 529",
+        timestamp: 1,
+      },
+    ]);
+    expect(state.entries[0]?.errorMessage).toBe("provider returned 529");
+  });
+
+  it("returns an empty transcript for an empty history", () => {
+    expect(transcriptFromMessages([])).toEqual(emptyTranscript());
   });
 });

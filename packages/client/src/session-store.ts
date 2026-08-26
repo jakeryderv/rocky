@@ -6,9 +6,21 @@
  * without a model call.
  */
 
-import type { ModelRef, SessionCommand, SessionPort, SessionState, SlashCommand } from "@rocky/contract";
+import type {
+  ModelRef,
+  SessionCommand,
+  SessionPort,
+  SessionState,
+  SessionSummary,
+  SlashCommand,
+} from "@rocky/contract";
 import { createSignal } from "solid-js";
-import { applyEvent, emptyTranscript, type TranscriptState } from "./model/transcript.js";
+import {
+  applyEvent,
+  emptyTranscript,
+  type TranscriptState,
+  transcriptFromMessages,
+} from "./model/transcript.js";
 
 export interface SessionStore {
   transcript: () => TranscriptState;
@@ -19,6 +31,11 @@ export interface SessionStore {
   models: () => readonly ModelRef[];
   loadModels: () => Promise<void>;
   setModel: (model: ModelRef) => Promise<void>;
+  /** Past sessions. Loaded on demand: listing reads every transcript on disk. */
+  sessions: () => readonly SessionSummary[];
+  loadSessions: () => Promise<void>;
+  switchSession: (sessionId: string) => Promise<void>;
+  newSession: () => Promise<void>;
   submit: (text: string) => Promise<void>;
   abort: () => Promise<void>;
   dispose: () => void;
@@ -29,6 +46,7 @@ export function createSessionStore(port: SessionPort): SessionStore {
   const [state, setState] = createSignal<SessionState | undefined>(undefined);
   const [commands, setCommands] = createSignal<readonly SlashCommand[]>([]);
   const [models, setModels] = createSignal<readonly ModelRef[]>([]);
+  const [sessions, setSessions] = createSignal<readonly SessionSummary[]>([]);
 
   // State arrives as a push. The one `get_state` below is the cold-start
   // snapshot only: without it a client that connects mid-session would render
@@ -40,7 +58,27 @@ export function createSessionStore(port: SessionPort): SessionStore {
     }
   };
 
+  /**
+   * Replace the transcript with the history of the session now in play.
+   *
+   * A resumed session already has messages; without this the client would show
+   * an empty transcript over a conversation the core can still see.
+   */
+  const adoptSession = async (next: SessionState) => {
+    setState(next);
+    setTranscript(emptyTranscript());
+    const result = await port.execute({ type: "get_messages" });
+    if (result.ok && result.command === "get_messages") {
+      setTranscript(transcriptFromMessages(result.messages));
+    }
+    await loadCommands();
+  };
+
   const unsubscribe = port.subscribe((event) => {
+    if (event.type === "session_switched") {
+      void adoptSession(event.state);
+      return;
+    }
     setTranscript((current) => applyEvent(current, event));
     if (event.type === "state_changed") {
       setState(event.state);
@@ -74,6 +112,17 @@ export function createSessionStore(port: SessionPort): SessionStore {
     }
   };
 
+  // On demand: listing reads every transcript on disk, and most sessions never
+  // open the picker.
+  const loadSessions = async () => {
+    const result = await port.execute({ type: "list_sessions" });
+    if (result.ok && result.command === "list_sessions") {
+      setSessions(result.sessions);
+    } else if (!result.ok) {
+      setTranscript((current) => ({ ...current, error: result.error }));
+    }
+  };
+
   const send = async (command: SessionCommand) => {
     const result = await port.execute(command);
     if (!result.ok) {
@@ -87,6 +136,10 @@ export function createSessionStore(port: SessionPort): SessionStore {
     commands,
     models,
     loadModels,
+    sessions,
+    loadSessions,
+    switchSession: (sessionId: string) => send({ type: "switch_session", sessionId }),
+    newSession: () => send({ type: "new_session" }),
     setModel: (model: ModelRef) => send({ type: "set_model", provider: model.provider, modelId: model.id }),
     submit: (text: string) => send({ type: "prompt", text }),
     abort: () => send({ type: "abort" }),

@@ -10,6 +10,7 @@ import type {
   SessionCommand,
   SessionEvent,
   SessionState,
+  SessionSummary,
   SlashCommand,
   Usage,
 } from "./types.js";
@@ -61,6 +62,27 @@ export const FIXTURE_SLASH_COMMANDS: SlashCommand[] = [
   { name: "skill:ship", description: "Take the branch to merged", source: "skill", scope: "project" },
 ];
 
+export const FIXTURE_SESSIONS: SessionSummary[] = [
+  {
+    id: "01a03ba3-c8d2-75c2-86d9-56cafcf5d663",
+    name: "contract fixture",
+    cwd: "/home/user/project",
+    createdAt: 1_787_700_000_000,
+    modifiedAt: 1_787_707_000_000,
+    messageCount: 4,
+    preview: "explain this repo",
+  },
+  {
+    id: "01a03ba3-c8d2-75c2-86d9-000000000002",
+    cwd: "/home/user/project",
+    createdAt: 1_787_600_000_000,
+    modifiedAt: 1_787_601_000_000,
+    messageCount: 12,
+    preview: "why does the build fail on bun",
+    parentId: "01a03ba3-c8d2-75c2-86d9-56cafcf5d663",
+  },
+];
+
 export const FIXTURE_COMMANDS: SessionCommand[] = [
   { id: "c1", type: "prompt", text: "explain this repo" },
   {
@@ -82,6 +104,9 @@ export const FIXTURE_COMMANDS: SessionCommand[] = [
   { id: "c13", type: "get_messages" },
   { id: "c14", type: "get_available_models" },
   { id: "c15", type: "set_follow_up_mode", mode: "all" },
+  { id: "c16", type: "list_sessions" },
+  { id: "c17", type: "switch_session", sessionId: "01a03ba3-c8d2-75c2-86d9-000000000002" },
+  { id: "c18", type: "new_session" },
 ];
 
 export const FIXTURE_EVENTS: SessionEvent[] = [
@@ -129,6 +154,7 @@ export const FIXTURE_EVENTS: SessionEvent[] = [
   { type: "retry_start", attempt: 1, maxAttempts: 3, delayMs: 500, error: "overloaded" },
   { type: "retry_end", success: true, attempt: 1 },
   { type: "state_changed", state: FIXTURE_STATE },
+  { type: "session_switched", state: FIXTURE_STATE },
   { type: "session_name_changed", name: "renamed" },
   { type: "error", message: "provider rejected the request" },
   {
@@ -159,6 +185,7 @@ export const FIXTURE_COMMAND_RESULTS: CommandResult[] = [
     ok: true,
     commands: FIXTURE_SLASH_COMMANDS,
   },
+  { type: "command_result", id: "c16", command: "list_sessions", ok: true, sessions: FIXTURE_SESSIONS },
 ];
 
 /** Every `MessageDelta` variant, so the delta union is covered exhaustively too. */

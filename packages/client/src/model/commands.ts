@@ -21,6 +21,8 @@ export interface CommandEntry {
 /** Commands the client handles itself. */
 export const CLIENT_COMMANDS: readonly CommandEntry[] = [
   { name: "model", description: "Switch the active model", origin: "client" },
+  { name: "resume", description: "Resume a previous session", origin: "client" },
+  { name: "new", description: "Start a new session", origin: "client" },
 ];
 
 /**

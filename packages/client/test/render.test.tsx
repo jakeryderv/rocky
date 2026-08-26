@@ -43,6 +43,35 @@ function fakePort() {
           },
         };
       }
+      if (command.type === "list_sessions") {
+        return {
+          type: "command_result",
+          command: "list_sessions",
+          ok: true,
+          sessions: [
+            {
+              id: "older",
+              cwd: "/work",
+              createdAt: 1,
+              modifiedAt: 1,
+              messageCount: 3,
+              preview: "why does the build fail",
+            },
+            {
+              id: "newer",
+              name: "contract work",
+              cwd: "/work",
+              createdAt: 2,
+              modifiedAt: 2,
+              messageCount: 9,
+              preview: "add get_commands",
+            },
+          ],
+        };
+      }
+      if (command.type === "get_messages") {
+        return { type: "command_result", command: "get_messages", ok: true, messages: [] };
+      }
       if (command.type === "get_available_models") {
         return {
           type: "command_result",
@@ -601,4 +630,91 @@ test("filters the picker as the user types", async () => {
   // The status line still names the active model, so assert on the picker row's
   // own display name rather than on the label it shares with the status line.
   expect(frame).not.toContain("GPT-5.5");
+});
+
+test("resumes a session from the picker, newest first", async () => {
+  const { port, sent } = fakePort();
+  const t = await testRender(() => <App port={port} />, { width: 70, height: 16 });
+  await t.renderOnce();
+
+  await t.mockInput.typeText("/resume");
+  t.mockInput.pressEnter();
+  await t.renderOnce();
+  await t.renderOnce();
+
+  const frame = t.captureCharFrame();
+  expect(frame).toContain("contract work");
+  expect(frame).toContain("why does the build fail");
+  expect(sent.filter((command) => command.type === "prompt")).toEqual([]);
+
+  // The most recently touched session is selected first, which is the one a
+  // resume almost always wants.
+  t.mockInput.pressEnter();
+  await t.renderOnce();
+  expect(sent.filter((command) => command.type === "switch_session")).toEqual([
+    { type: "switch_session", sessionId: "newer" },
+  ]);
+});
+
+test("filters sessions by what was said in them", async () => {
+  const { port } = fakePort();
+  const t = await testRender(() => <App port={port} />, { width: 70, height: 16 });
+  await t.renderOnce();
+
+  await t.mockInput.typeText("/resume");
+  t.mockInput.pressEnter();
+  await t.renderOnce();
+  await t.renderOnce();
+
+  await t.mockInput.typeText("build");
+  await t.renderOnce();
+  const frame = t.captureCharFrame();
+  expect(frame).toContain("why does the build fail");
+  expect(frame).not.toContain("contract work");
+});
+
+test("/new starts a session without opening a picker", async () => {
+  const { port, sent } = fakePort();
+  const t = await testRender(() => <App port={port} />, { width: 70, height: 16 });
+  await t.renderOnce();
+
+  await t.mockInput.typeText("/new");
+  t.mockInput.pressEnter();
+  await t.renderOnce();
+
+  expect(sent.filter((command) => command.type === "new_session")).toHaveLength(1);
+  expect(sent.filter((command) => command.type === "prompt")).toEqual([]);
+  expect(t.captureCharFrame()).not.toContain("Resume a session");
+});
+
+// The transcript belongs to the session that was just replaced. Keeping it
+// would show one conversation's history over another's.
+test("rebuilds the transcript when the core switches session", async () => {
+  const { port, emit } = fakePort();
+  const t = await testRender(() => <App port={port} />, { width: 70, height: 16 });
+  await t.renderOnce();
+
+  emit({ type: "message_start", role: "user" });
+  emit({ type: "message_delta", delta: { type: "text_delta", index: 0, text: "OLD HISTORY" } });
+  await t.renderOnce();
+  expect(t.captureCharFrame()).toContain("OLD HISTORY");
+
+  emit({
+    type: "session_switched",
+    state: {
+      sessionId: "s2",
+      cwd: "/work",
+      thinkingLevel: "medium",
+      isStreaming: false,
+      isCompacting: false,
+      steeringMode: "all",
+      followUpMode: "all",
+      autoCompactionEnabled: true,
+      messageCount: 0,
+      pendingMessageCount: 0,
+    },
+  });
+  await t.renderOnce();
+  await t.renderOnce();
+  expect(t.captureCharFrame()).not.toContain("OLD HISTORY");
 });

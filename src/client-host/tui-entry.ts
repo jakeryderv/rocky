@@ -31,7 +31,13 @@ export async function runRockyClient(options: { cwd?: string } = {}): Promise<vo
   const disposeOnce = () => {
     if (!disposed) {
       disposed = true;
-      dispose();
+      // Disposing the runtime is async (it emits `session_shutdown` to
+      // extensions first), but every caller here is a teardown path with
+      // nothing left to await it. Failures are reported rather than swallowed
+      // into an unhandled rejection.
+      void Promise.resolve(dispose()).catch((error: unknown) => {
+        process.stderr.write(`rocky: session teardown failed: ${String(error)}\n`);
+      });
     }
   };
 
