@@ -791,3 +791,129 @@ test("ctrl+c cancels a running shell command before anything else", async () => 
   expect(sent.filter((command) => command.type === "abort")).toEqual([]);
   expect(quits).toBe(0);
 });
+
+// A turn that is already running cannot take a prompt — the core rejects one
+// outright. Typing during a turn means steering it.
+test("steers a running turn instead of erroring", async () => {
+  const { port, sent, emit } = fakePort();
+  const t = await testRender(() => <App port={port} />, { width: 70, height: 16 });
+  await t.renderOnce();
+
+  emit({ type: "turn_start" });
+  await t.renderOnce();
+
+  await t.mockInput.typeText("actually use the other file");
+  t.mockInput.pressEnter();
+  await t.renderOnce();
+
+  expect(sent.filter((command) => command.type === "prompt")).toEqual([]);
+  expect(sent.filter((command) => command.type === "steer")).toEqual([
+    { type: "steer", text: "actually use the other file" },
+  ]);
+});
+
+test("still runs a slash or shell command while a turn is streaming", async () => {
+  const { port, sent, emit } = fakePort();
+  const t = await testRender(() => <App port={port} />, { width: 70, height: 16 });
+  await t.renderOnce();
+  emit({ type: "turn_start" });
+  await t.renderOnce();
+
+  await t.mockInput.typeText("!ls");
+  t.mockInput.pressEnter();
+  await t.renderOnce();
+
+  expect(sent.filter((command) => command.type === "bash")).toHaveLength(1);
+  expect(sent.filter((command) => command.type === "steer")).toEqual([]);
+});
+
+test("shows what is waiting in the queues", async () => {
+  const { port, emit } = fakePort();
+  const t = await testRender(() => <App port={port} />, { width: 70, height: 16 });
+  await t.renderOnce();
+
+  emit({ type: "queue_update", steering: ["use the other file"], followUp: ["then run the tests"] });
+  await t.renderOnce();
+  const frame = t.captureCharFrame();
+  expect(frame).toContain("steer: use the other file");
+  expect(frame).toContain("follow-up: then run the tests");
+
+  emit({ type: "queue_update", steering: [], followUp: [] });
+  await t.renderOnce();
+  expect(t.captureCharFrame()).not.toContain("use the other file");
+});
+
+test("/compact passes custom instructions through", async () => {
+  const { port, sent } = fakePort();
+  const t = await testRender(() => <App port={port} />, { width: 70, height: 16 });
+  await t.renderOnce();
+
+  await t.mockInput.typeText("/compact keep the design decisions");
+  t.mockInput.pressEnter();
+  await t.renderOnce();
+
+  expect(sent.filter((command) => command.type === "compact")).toEqual([
+    { type: "compact", customInstructions: "keep the design decisions" },
+  ]);
+  expect(sent.filter((command) => command.type === "prompt")).toEqual([]);
+});
+
+test("/compact with no arguments compacts with the default instructions", async () => {
+  const { port, sent } = fakePort();
+  const t = await testRender(() => <App port={port} />, { width: 70, height: 16 });
+  await t.renderOnce();
+
+  await t.mockInput.typeText("/compact");
+  t.mockInput.pressEnter();
+  await t.renderOnce();
+
+  expect(sent.filter((command) => command.type === "compact")).toEqual([{ type: "compact" }]);
+});
+
+test("the toggles flip the mode that is currently in effect", async () => {
+  const { port, sent } = fakePort();
+  const t = await testRender(() => <App port={port} />, { width: 70, height: 16 });
+  await t.renderOnce();
+
+  for (const [typed, expected] of [
+    ["/autocompact", { type: "set_auto_compaction", enabled: false }],
+    ["/steering", { type: "set_steering_mode", mode: "one-at-a-time" }],
+    ["/followup", { type: "set_follow_up_mode", mode: "one-at-a-time" }],
+  ] as const) {
+    await t.mockInput.typeText(typed);
+    t.mockInput.pressEnter();
+    await t.renderOnce();
+    expect(sent.at(-1)).toEqual(expected);
+  }
+});
+
+// A status line that names every default says nothing.
+test("names only the settings that differ from the default", async () => {
+  const { port, emit } = fakePort();
+  const t = await testRender(() => <App port={port} />, { width: 70, height: 16 });
+  await t.renderOnce();
+  expect(t.captureCharFrame()).not.toContain("auto-compact off");
+
+  emit({
+    type: "state_changed",
+    state: {
+      sessionId: "s1",
+      cwd: "/work",
+      thinkingLevel: "medium",
+      isStreaming: false,
+      isCompacting: true,
+      steeringMode: "one-at-a-time",
+      followUpMode: "all",
+      autoCompactionEnabled: false,
+      messageCount: 0,
+      pendingMessageCount: 0,
+      isBashRunning: false,
+    },
+  });
+  await t.renderOnce();
+  const frame = t.captureCharFrame();
+  expect(frame).toContain("compacting");
+  expect(frame).toContain("auto-compact off");
+  expect(frame).toContain("steer one-at-a-time");
+  expect(frame).not.toContain("follow-up one-at-a-time");
+});

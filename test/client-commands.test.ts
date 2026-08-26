@@ -28,6 +28,19 @@ describe("mergeCommands", () => {
     ]);
   });
 
+  // The core omits its built-ins because they are pi-tui screens; anything the
+  // client offers, the client has to run. This catches an entry added to the
+  // list without a branch in `runClientCommand`.
+  it("claims every command it advertises", () => {
+    for (const command of CLIENT_COMMANDS) {
+      expect(routeSubmission(`/${command.name}`)).toEqual({
+        kind: "client",
+        name: command.name,
+        args: "",
+      });
+    }
+  });
+
   it("carries the core's description and argument hint across", () => {
     expect(mergeCommands(CORE).find((command) => command.name === "explain")).toEqual({
       name: "explain",

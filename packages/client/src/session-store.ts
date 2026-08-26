@@ -8,6 +8,7 @@
 
 import type {
   ModelRef,
+  QueueMode,
   SessionCommand,
   SessionPort,
   SessionState,
@@ -38,6 +39,15 @@ export interface SessionStore {
   newSession: () => Promise<void>;
   runBash: (command: string, excludeFromContext: boolean) => Promise<void>;
   abortBash: () => Promise<void>;
+  /** Messages waiting to be released into the current turn, or after it. */
+  queue: () => { steering: readonly string[]; followUp: readonly string[] };
+  /** Queue a message into a turn that is already running. */
+  steer: (text: string) => Promise<void>;
+  followUp: (text: string) => Promise<void>;
+  compact: (customInstructions?: string) => Promise<void>;
+  setAutoCompaction: (enabled: boolean) => Promise<void>;
+  setSteeringMode: (mode: QueueMode) => Promise<void>;
+  setFollowUpMode: (mode: QueueMode) => Promise<void>;
   submit: (text: string) => Promise<void>;
   abort: () => Promise<void>;
   dispose: () => void;
@@ -49,6 +59,10 @@ export function createSessionStore(port: SessionPort): SessionStore {
   const [commands, setCommands] = createSignal<readonly SlashCommand[]>([]);
   const [models, setModels] = createSignal<readonly ModelRef[]>([]);
   const [sessions, setSessions] = createSignal<readonly SessionSummary[]>([]);
+  const [queue, setQueue] = createSignal<{ steering: readonly string[]; followUp: readonly string[] }>({
+    steering: [],
+    followUp: [],
+  });
 
   // State arrives as a push. The one `get_state` below is the cold-start
   // snapshot only: without it a client that connects mid-session would render
@@ -84,6 +98,9 @@ export function createSessionStore(port: SessionPort): SessionStore {
     setTranscript((current) => applyEvent(current, event));
     if (event.type === "state_changed") {
       setState(event.state);
+    }
+    if (event.type === "queue_update") {
+      setQueue({ steering: event.steering, followUp: event.followUp });
     }
     if (event.type === "settled") {
       void loadCommands();
@@ -141,6 +158,17 @@ export function createSessionStore(port: SessionPort): SessionStore {
     sessions,
     loadSessions,
     switchSession: (sessionId: string) => send({ type: "switch_session", sessionId }),
+    queue,
+    steer: (text: string) => send({ type: "steer", text }),
+    followUp: (text: string) => send({ type: "follow_up", text }),
+    compact: (customInstructions?: string) =>
+      send({
+        type: "compact",
+        ...(customInstructions ? { customInstructions } : {}),
+      }),
+    setAutoCompaction: (enabled: boolean) => send({ type: "set_auto_compaction", enabled }),
+    setSteeringMode: (mode: QueueMode) => send({ type: "set_steering_mode", mode }),
+    setFollowUpMode: (mode: QueueMode) => send({ type: "set_follow_up_mode", mode }),
     runBash: (command: string, excludeFromContext: boolean) =>
       send({ type: "bash", command, ...(excludeFromContext ? { excludeFromContext: true } : {}) }),
     abortBash: () => send({ type: "abort_bash" }),
