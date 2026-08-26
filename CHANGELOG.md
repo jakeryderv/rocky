@@ -2,6 +2,23 @@
 
 ## Unreleased
 
+- **Repository workflow defined and enforced.** `main` now requires both CI jobs green and rejects
+  force-pushes and deletion, so work goes through a branch and a PR; before this, a red `main` was one
+  `git push` away and nothing prevented it. `.githooks/pre-push` runs the same gates locally (enable once
+  with `npm run hooks:install` — `npm ci --ignore-scripts` means lifecycle hooks never fire), selecting the
+  Bun gate from the diff and refusing the push if the client changed and Bun is missing, so that gap cannot
+  pass silently. Branch naming, Conventional Commit scopes, and the squash-merge policy are written down in
+  `CONTRIBUTING.md` and `AGENTS.md` instead of being inferred from history.
+
+- **Fixed `docs/verification.md`, which described a gate that no longer exists.** It claimed `npm run verify`
+  runs a tarball install/consumer check verifying asset hashes, installed CLI execution, and pinned Pi
+  versions; `pack:check` was dropped when the repo became a workspace. It also never mentioned
+  `client:verify`. Anyone following it reported checks that had not run.
+
+- The active roadmap phase is now also tracked as GitHub issues (#19-#28, plus #29-#30 for carried debt),
+  linked from `docs/roadmap.md`. Later phases stay narrative until they become active, so there is one place
+  to change when the plan changes.
+
 - **Dropped `pi-client` and `pi-protocol`.** The harness's `src/client/` remote-session surface — a
   `RemoteSession` over pi.dev's wire protocol, plus its transcript reducer and the `./client` package export —
   was dead code: nothing in Rocky imported it, and the experimental `client`/`server` CLI commands that would

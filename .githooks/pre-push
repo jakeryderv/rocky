@@ -1,0 +1,37 @@
+#!/usr/bin/env bash
+#
+# Runs the same gates CI runs, before the push rather than after it.
+#
+# The Bun gate is skipped unless the push actually touches the client or the
+# contract it compiles against, because it needs Bun on PATH and most pushes do
+# not touch either. Bypass the whole hook with `git push --no-verify`.
+set -euo pipefail
+
+repo_root="$(git rev-parse --show-toplevel)"
+cd "$repo_root"
+
+remote_ref="$(git rev-parse --abbrev-ref --symbolic-full-name '@{upstream}' 2>/dev/null || true)"
+if [ -n "$remote_ref" ] && git rev-parse --verify --quiet "$remote_ref" >/dev/null; then
+  range="$remote_ref..HEAD"
+else
+  # No upstream yet: consider everything on this branch that main does not have.
+  range="$(git merge-base HEAD origin/main 2>/dev/null || echo HEAD~1)..HEAD"
+fi
+
+changed="$(git diff --name-only "$range" 2>/dev/null || true)"
+
+echo "pre-push: npm run verify"
+npm run verify
+
+if grep -qE '^(packages/client/|src/contract/|scripts/client)' <<<"$changed"; then
+  if command -v bun >/dev/null 2>&1; then
+    echo "pre-push: npm run client:verify"
+    npm run client:verify
+  else
+    echo "pre-push: client changed but bun is not on PATH; skipping client:verify" >&2
+    echo "pre-push: CI will still run it — push refused so the gap is not silent." >&2
+    exit 1
+  fi
+fi
+
+echo "pre-push: all gates passed"

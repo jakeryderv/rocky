@@ -23,7 +23,21 @@ when network access is appropriate.
 ## Gates
 
 `npm run verify` is the Node gate and must stay Node-only. Bun-only work runs in `npm run client:verify`
-(typecheck, render tests, client smoke) and a separate CI job. Report both when touching the client.
+(typecheck, render tests, client smoke) and a separate CI job. Report both when touching the client, in the
+Pass/Fail/Skip format in `docs/verification.md`.
+
+`.githooks/pre-push` runs both gates and selects the Bun one from the diff; enable it once with
+`npm run hooks:install`. It is a convenience, not the contract — the gate is still yours to run and report.
+
+## Git workflow
+
+`main` requires both CI jobs green and rejects force-pushes, so all work goes through a branch and a pull
+request; see `CONTRIBUTING.md`. Branches are `<type>/<short-slug>`, commits are Conventional Commits with an
+area scope (`feat(client):`, `chore(deps):`), and merges are squashed. Never add `Co-Authored-By` or AI
+attribution lines. Reference issues with `Closes #N`.
+
+Open issues track the active roadmap phase only; `docs/roadmap.md` holds the plan and the reasoning. Keep
+them consistent: when an issue's scope changes, the roadmap changes with it.
 
 ## Invariants
 
