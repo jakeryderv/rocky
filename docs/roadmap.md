@@ -43,6 +43,9 @@ other 19 live in `core/` and `cli/` and need real work (see phase C).
 - **First OpenTUI + Solid client slice** (`packages/client`) over a `SessionPort`, with a headless Bun render
   suite, a root-level client smoke, and a separate Bun CI job. See ADR 0005. Scrollback, incremental tool
   output, a working quit path, prompt history, and multi-line paste have since landed.
+- **True multi-line prompt editing** ([#23](https://github.com/jakeryderv/rocky/issues/23)). A textarea that
+  grows with the draft, replacing the held-aside paste. Enter sends; shift+Enter, alt+Enter and ctrl+J insert
+  a newline.
 - **Model switcher** ([#21](https://github.com/jakeryderv/rocky/issues/21)). A `/model` picker in the client,
   and the model catalog wired into the client host — it was never supplied, so `get_available_models`
   returned nothing and `set_model` always failed. The client also gained a place for commands of its own,
@@ -73,8 +76,6 @@ with it.
    contract is the real answer.
 2. **Session list, resume, and new session** ([#22](https://github.com/jakeryderv/rocky/issues/22)). Needs `switch_session`, `new_session`, `get_entries`, and
    `get_tree` added to the contract.
-3. **Multi-line input editing** ([#23](https://github.com/jakeryderv/rocky/issues/23)). Today a pasted block is held aside rather than editable.
-
 Then, needed but not blocking: bash passthrough ([#24](https://github.com/jakeryderv/rocky/issues/24));
 compaction and steering/follow-up queue UI over
 commands the contract already has ([#26](https://github.com/jakeryderv/rocky/issues/26)); settings, theme,

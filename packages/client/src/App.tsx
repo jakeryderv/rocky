@@ -4,8 +4,9 @@
  * Receives a `SessionPort` and touches nothing else from Rocky, so it renders
  * identically against a real session and a fake one.
  */
-import type { InputRenderable, MouseEvent, ScrollBoxRenderable } from "@opentui/core";
-import { useKeyboard, usePaste, useRenderer } from "@opentui/solid";
+import type { MouseEvent, ScrollBoxRenderable, TextareaRenderable } from "@opentui/core";
+import { defaultTextareaKeyBindings } from "@opentui/core";
+import { useKeyboard, useRenderer } from "@opentui/solid";
 import type { ModelRef, SessionPort } from "@rocky/contract";
 import { createEffect, createMemo, createSignal, For, Show } from "solid-js";
 import { mergeCommands, routeSubmission } from "./model/commands.js";
@@ -17,6 +18,7 @@ import {
   filterCommands,
   moveSelection,
 } from "./model/completion.js";
+import { editorRows, promptKeyBindings } from "./model/editor.js";
 import { emptyHistory, newer, older, remember } from "./model/history.js";
 import { filterModels, isActiveModel, modelLabel } from "./model/picker.js";
 import { entryLines } from "./model/transcript.js";
@@ -28,7 +30,6 @@ export function App(props: { port: SessionPort; onQuit?: (() => void) | undefine
   const store = createSessionStore(props.port);
   const [pinned, setPinned] = createSignal(true);
   const [history, setHistory] = createSignal(emptyHistory());
-  const [pending, setPending] = createSignal<string[]>([]);
   const [draft, setDraft] = createSignal("");
   const [selected, setSelected] = createSignal(0);
   // The only overlay today. A union keeps the next one (sessions, settings)
@@ -36,7 +37,7 @@ export function App(props: { port: SessionPort; onQuit?: (() => void) | undefine
   const [overlay, setOverlay] = createSignal<"model" | undefined>(undefined);
   const [picked, setPicked] = createSignal(0);
   let scroller: ScrollBoxRenderable | undefined;
-  let input: InputRenderable | undefined;
+  let editor: TextareaRenderable | undefined;
   const renderer = useRenderer();
 
   /** Quit: tear the renderer down so the terminal is left usable. */
@@ -46,12 +47,15 @@ export function App(props: { port: SessionPort; onQuit?: (() => void) | undefine
   };
 
   const showInInput = (text: string) => {
-    if (input) {
-      input.value = text;
+    if (editor) {
+      editor.editBuffer.setText(text);
+      // setText leaves the cursor where it was, which lands mid-word when the
+      // new text is shorter than the old one.
+      editor.cursorOffset = text.length;
     }
     // Mirrored rather than read back off the renderable: the completion popup
-    // has to react to programmatic edits (history, paste, accepting a
-    // suggestion) as well as to typing, and only typing raises `input`.
+    // has to react to programmatic edits (history, accepting a suggestion) as
+    // well as to typing, and only typing raises a content change.
     setDraft(text);
   };
 
@@ -106,35 +110,27 @@ export function App(props: { port: SessionPort; onQuit?: (() => void) | undefine
     return true;
   };
 
-  const submit = (value: string) => {
+  const submit = (text: string) => {
     if (overlay() === "model") {
       chooseModel(pickerModels()[picked()]);
       return;
     }
-    // A multi-line paste is held aside and prepended on submit, because the
-    // single-line input cannot represent the newlines itself.
-    const held = pending();
-    const text = held.length > 0 ? [...held, value].join("\n") : value;
     if (text.trim().length === 0) {
       return;
     }
+    setHistory((current) => remember(current, text));
+    // The editor keeps its text after submit; clear it so the next prompt
+    // starts empty and history navigation has a known baseline.
+    showInInput("");
     const route = routeSubmission(text, commands());
     if (route.kind === "client") {
       // A client command never reaches the core, but it is still history: the
       // user typed it, and ↑ has to bring it back like anything else.
-      setPending([]);
-      setHistory((current) => remember(current, text));
-      showInInput("");
       if (route.name === "model") {
         openModelPicker();
       }
       return;
     }
-    setPending([]);
-    setHistory((current) => remember(current, text));
-    // The input keeps its text after Enter; clear it so the next prompt starts
-    // empty and history navigation has a known baseline.
-    showInInput("");
     void store.submit(text);
   };
 
@@ -154,19 +150,6 @@ export function App(props: { port: SessionPort; onQuit?: (() => void) | undefine
   createEffect(() => {
     store.transcript().entries;
     setPinned(atBottom());
-  });
-
-  usePaste((event) => {
-    const text = new TextDecoder().decode(event.bytes).replace(/\r\n?/g, "\n");
-    const lines = text.split("\n");
-    if (lines.length <= 1) {
-      // A single-line paste is just typing; let the input handle it.
-      return;
-    }
-    event.preventDefault();
-    // Keep every line but the last; the last stays editable in the input.
-    setPending((current) => [...current, ...lines.slice(0, -1)]);
-    showInInput(`${input?.value ?? ""}${lines.at(-1) ?? ""}`);
   });
 
   useKeyboard((key) => {
@@ -208,7 +191,13 @@ export function App(props: { port: SessionPort; onQuit?: (() => void) | undefine
         setSelected((current) => moveSelection(current, suggestions().length, key.name === "up" ? -1 : 1));
         return;
       }
-      const current = input?.value ?? "";
+      // A multi-line draft keeps the arrows for its own cursor. Recalling
+      // history over a block the user is halfway through writing would destroy
+      // it, and there is no undo across that boundary.
+      const current = draft();
+      if (current.includes("\n")) {
+        return;
+      }
       const move = key.name === "up" ? older(history(), current) : newer(history(), current);
       setHistory(move.state);
       if (move.text !== undefined) {
@@ -333,25 +322,22 @@ export function App(props: { port: SessionPort; onQuit?: (() => void) | undefine
         </box>
       </Show>
 
-      <Show when={pending().length > 0}>
-        <text fg="#888888" style={{ flexShrink: 0 }}>
-          + {pending().length} pasted line{pending().length === 1 ? "" : "s"}
-        </text>
-      </Show>
-
-      <input
-        ref={(element: InputRenderable) => {
-          input = element;
+      <textarea
+        ref={(element: TextareaRenderable) => {
+          editor = element;
         }}
         focused
+        keyBindings={promptKeyBindings(defaultTextareaKeyBindings)}
         placeholder={
           overlay() === "model"
             ? "Filter models…"
-            : "Ask Rocky…   / commands · ↑ history · ctrl+c aborts, or quits when idle"
+            : "Ask Rocky…   / commands · shift+enter newline · ctrl+c aborts, or quits when idle"
         }
-        style={{ flexShrink: 0 }}
-        on:input={(value: string) => setDraft(value)}
-        on:enter={(value: string) => submit(value)}
+        // Grows with the draft rather than scrolling a one-row window, and
+        // stops at a bound so a long paste cannot swallow the transcript.
+        style={{ flexShrink: 0, height: editorRows(draft()) }}
+        onContentChange={() => setDraft(editor?.plainText ?? "")}
+        onSubmit={() => submit(editor?.plainText ?? "")}
       />
     </box>
   );

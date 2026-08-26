@@ -328,7 +328,7 @@ test("keeps the input focused when the transcript is clicked", async () => {
   fillTranscript(emit, 20);
   await t.flush();
 
-  const input = findRenderable(t.renderer as never, "InputRenderable");
+  const input = findRenderable(t.renderer as never, "TextareaRenderable");
   expect((input as { focused: boolean }).focused).toBe(true);
 
   await t.mockMouse.click(3, 3);
@@ -378,35 +378,84 @@ test("recalls a previous prompt with the up arrow", async () => {
   const t = await testRender(() => <App port={port} />, { width: 50, height: 10 });
   await t.flush();
 
-  const input = findRenderable(t.renderer as never, "InputRenderable") as unknown as { value: string };
+  const input = findRenderable(t.renderer as never, "TextareaRenderable") as unknown as {
+    plainText: string;
+  };
   await t.mockInput.typeText("first prompt");
-  await t.mockInput.pressEnter();
+  t.mockInput.pressEnter();
   await t.flush();
-  expect(input.value).toBe("");
+  expect(input.plainText).toBe("");
 
-  await t.mockInput.pressArrow("up");
+  t.mockInput.pressArrow("up");
   await t.flush();
-  expect(input.value).toBe("first prompt");
+  expect(input.plainText).toBe("first prompt");
 
-  await t.mockInput.pressArrow("down");
+  t.mockInput.pressArrow("down");
   await t.flush();
-  expect(input.value).toBe("");
+  expect(input.plainText).toBe("");
 });
 
-test("holds a multi-line paste aside and submits it whole", async () => {
+// The arrows belong to the draft once it has more than one line: recalling
+// history over a block halfway written would destroy it, with no undo across
+// that boundary.
+test("leaves the arrows to the editor once the draft is multi-line", async () => {
+  const { port } = fakePort();
+  const t = await testRender(() => <App port={port} />, { width: 50, height: 12 });
+  await t.flush();
+
+  const input = findRenderable(t.renderer as never, "TextareaRenderable") as unknown as {
+    plainText: string;
+  };
+  await t.mockInput.typeText("first prompt");
+  t.mockInput.pressEnter();
+  await t.flush();
+
+  await t.mockInput.pasteBracketedText("alpha\nbeta");
+  await t.flush();
+  expect(input.plainText).toBe("alpha\nbeta");
+
+  t.mockInput.pressArrow("up");
+  await t.flush();
+  expect(input.plainText).toBe("alpha\nbeta");
+});
+
+// A pasted block is editable in place now, not held aside as a count.
+test("keeps a multi-line paste editable and submits it whole", async () => {
   const { port, sent } = fakePort();
   const t = await testRender(() => <App port={port} />, { width: 50, height: 12 });
   await t.flush();
 
   await t.mockInput.pasteBracketedText("line one\nline two\nline three");
   await t.flush();
-  expect(t.captureCharFrame()).toContain("2 pasted lines");
+  const frame = t.captureCharFrame();
+  expect(frame).toContain("line one");
+  expect(frame).toContain("line three");
 
-  await t.mockInput.pressEnter();
+  t.mockInput.pressEnter();
   await t.flush();
 
   const prompt = sent.find((command) => command.type === "prompt") as { text: string } | undefined;
   expect(prompt?.text).toBe("line one\nline two\nline three");
+});
+
+// Enter sends; a newline is the deliberate act. Ctrl+J arrives as a bare
+// linefeed, which is the one terminals essentially all report.
+test("ctrl+j inserts a newline instead of submitting", async () => {
+  const { port, sent } = fakePort();
+  const t = await testRender(() => <App port={port} />, { width: 50, height: 12 });
+  await t.flush();
+
+  await t.mockInput.typeText("first line");
+  t.mockInput.pressKey("\n");
+  await t.mockInput.typeText("second line");
+  await t.flush();
+
+  expect(sent.filter((command) => command.type === "prompt")).toEqual([]);
+
+  t.mockInput.pressEnter();
+  await t.flush();
+  const prompt = sent.find((command) => command.type === "prompt") as { text: string } | undefined;
+  expect(prompt?.text).toBe("first line\nsecond line");
 });
 
 test("suggests commands while a slash token is being typed", async () => {
