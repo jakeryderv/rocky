@@ -7,14 +7,34 @@
  * preload. Static imports would be hoisted above it, and the symptom would be a
  * frozen first frame rather than an error.
  */
+import { applyRockyProcessIdentity } from "../runtime/pi-runtime.js";
 import { createRockySessionPort } from "./create-session-port.js";
 
 export async function runRockyClient(options: { cwd?: string } = {}): Promise<void> {
+  // Checked before the runtime, because it is the more fundamental
+  // precondition: no terminal means the client cannot work on any runtime,
+  // whereas the Bun requirement is specific to the renderer.
+  //
+  // Refused rather than attempted. The renderer takes the terminal over on
+  // start-up, so without one it writes an alternate-screen escape sequence into
+  // whatever the stream actually is and then waits for input that can never
+  // arrive — a pipe, a log file, or a CI step hangs indefinitely instead of
+  // failing. Once `rocky` routes by argv this is also the backstop for a
+  // mis-routed non-interactive invocation.
+  if (!process.stdin.isTTY || !process.stdout.isTTY) {
+    throw new Error(
+      'The Rocky client needs an interactive terminal. For non-interactive use, run `rocky -p "…"` or `rocky --mode json`.',
+    );
+  }
+
   if (!process.versions["bun"]) {
     throw new Error(
       "The Rocky client requires Bun: OpenTUI's native renderer has no FFI backend on this Node build. Run `bun run client`.",
     );
   }
+
+  // Before the session exists: these reach every bash subprocess the agent runs.
+  applyRockyProcessIdentity();
 
   // Specifiers are held in variables so the Node typecheck/build does not try to
   // resolve them: the preload has no Node type declarations, and the client

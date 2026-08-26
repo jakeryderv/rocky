@@ -233,11 +233,24 @@ export async function loadPiRuntime(): Promise<typeof import("@jakeryderv/rocky-
 }
 
 /** Run the harness CLI composition, including its official InteractiveMode. */
-export async function runRocky(args: readonly string[]): Promise<void> {
+/**
+ * The identity every Rocky entry point must establish before a session exists.
+ *
+ * Shared rather than duplicated because these are not cosmetic: `AI_AGENT` and
+ * the `*_CODING_AGENT` pair are inherited by every bash subprocess the agent
+ * runs, so a tool that branches on "am I inside a coding agent" behaves
+ * differently depending on which front end started the session. That divergence
+ * is what issue #29 recorded.
+ */
+export function applyRockyProcessIdentity(): void {
   process.title = "rocky";
   process.env["ROCKY_CODING_AGENT"] = "true";
   process.env["PI_CODING_AGENT"] = "true";
   process.env["AI_AGENT"] = "rocky";
+}
+
+export async function runRocky(args: readonly string[]): Promise<void> {
+  applyRockyProcessIdentity();
 
   const restoreCreationMask = beginPrivateCreationMask();
   try {

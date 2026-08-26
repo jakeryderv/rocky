@@ -23,6 +23,12 @@ import {
 } from "../runtime/pi-runtime.js";
 import { collectSlashCommands, type SlashCommandSources } from "./collect-slash-commands.js";
 
+/** The settings the HTTP transport reads. Structural, so it is testable with a fake. */
+interface HttpSettingsSource {
+  getGlobalSettings(): { httpProxy?: string };
+  getHttpIdleTimeoutMs(): number;
+}
+
 /** The slice of the model runtime provider listing needs. Structural, so it is testable. */
 export interface ProviderDirectorySources {
   readonly modelRuntime?: {
@@ -168,6 +174,17 @@ export async function createRockySessionPort(
         resourceLoaderOptions: sessionOptions.resourceLoaderOptions as never,
         resourceLoaderReloadOptions: sessionOptions.resourceLoaderReloadOptions as never,
       });
+
+      // `main()` does this for the CLI, and a host that builds a session
+      // without `main()` has to do it too: without it the client runs with no
+      // proxy agent and no HTTP idle timeout, so a stalled provider stream has
+      // nothing to end it. Settings come from the runtime's own manager, which
+      // a session switch replaces — hence inside the factory rather than once.
+      const settings = (services as { settingsManager?: HttpSettingsSource }).settingsManager;
+      if (settings) {
+        harness.applyHttpProxySettings(settings.getGlobalSettings().httpProxy);
+        harness.configureHttpDispatcher(settings.getHttpIdleTimeoutMs());
+      }
       const created = await harness.createAgentSessionFromServices({
         services,
         sessionManager: input.sessionManager,
