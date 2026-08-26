@@ -1,4 +1,4 @@
-import { chmodSync, closeSync, existsSync, mkdirSync, openSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync } from "node:fs";
 import { dirname, join } from "node:path";
 import type { ExtensionAPI, InlineExtension } from "@jakeryderv/rocky-harness";
 
@@ -30,7 +30,15 @@ function ensurePrivateDirectory(path: string): void {
   applyMode(path, PRIVATE_DIRECTORY_MODE);
 }
 
-/** Ensure the harness's lazily written session file already exists with a private mode. */
+/**
+ * Enforce private modes on session storage.
+ *
+ * The session file itself must not be created here: the harness writes it
+ * lazily on the first assistant message using an exclusive-create (`wx`), so
+ * pre-creating the path makes that flush fail with EEXIST. The harness creates
+ * its own session files owner-only; this only covers the directories and any
+ * file that already exists (resumed or imported sessions).
+ */
 export function enforcePrivateSessionStorage(sessionManager: SessionStoragePaths): void {
   const sessionDirectory = sessionManager.getSessionDir();
   if (sessionDirectory) {
@@ -42,9 +50,9 @@ export function enforcePrivateSessionStorage(sessionManager: SessionStoragePaths
     return;
   }
   ensurePrivateDirectory(dirname(sessionFile));
-  const descriptor = openSync(sessionFile, "a", PRIVATE_FILE_MODE);
-  closeSync(descriptor);
-  applyMode(sessionFile, PRIVATE_FILE_MODE);
+  if (existsSync(sessionFile)) {
+    applyMode(sessionFile, PRIVATE_FILE_MODE);
+  }
 }
 
 function beginPrivateCreationMask(): () => void {

@@ -108,9 +108,14 @@ try {
     if (mode(agentDir) !== 0o700 || mode(sessionDirectory) !== 0o700) {
       throw new Error("Rocky agent/session directories are not private");
     }
+    // The harness creates the session file lazily, on the first assistant message,
+    // so an offline startup legitimately leaves the directory empty. File modes at
+    // creation are covered by test/pi-runtime.test.ts, which drives a real flush
+    // under a permissive umask; here we only assert nothing lands world-readable.
     const sessionFiles = readdirSync(sessionDirectory).filter((name) => name.endsWith(".jsonl"));
-    if (sessionFiles.length !== 1 || mode(join(sessionDirectory, sessionFiles[0])) !== 0o600) {
-      throw new Error("Rocky session file is missing or not mode 0600");
+    const leaked = sessionFiles.filter((name) => mode(join(sessionDirectory, name)) !== 0o600);
+    if (leaked.length > 0) {
+      throw new Error(`Rocky session files are not mode 0600: ${leaked.join(", ")}`);
     }
     tuiResult = "passed";
   }

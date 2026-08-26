@@ -3,6 +3,7 @@ import { type ImageContent, type Message, type TextContent, type Usage, uuidv7 }
 import { randomUUID } from "crypto";
 import {
 	appendFileSync,
+	chmodSync,
 	closeSync,
 	createReadStream,
 	existsSync,
@@ -483,9 +484,39 @@ function getDefaultSessionDirPath(cwd: string, agentDir: string = getDefaultAgen
 export function getDefaultSessionDir(cwd: string, agentDir: string = getDefaultAgentDir()): string {
 	const sessionDir = getDefaultSessionDirPath(cwd, agentDir);
 	if (!existsSync(sessionDir)) {
-		mkdirSync(sessionDir, { recursive: true });
+		mkdirPrivate(sessionDir);
 	}
 	return sessionDir;
+}
+
+// Sessions hold prompts, model output, and tool arguments, so session files and
+// directories are owner-only on POSIX. The mode is applied at creation and then
+// re-applied, because open/mkdir modes are masked by the ambient umask.
+const PRIVATE_SESSION_DIR_MODE = 0o700;
+const PRIVATE_SESSION_FILE_MODE = 0o600;
+
+function applyPrivateMode(path: string, mode: number): void {
+	if (process.platform !== "win32") {
+		chmodSync(path, mode);
+	}
+}
+
+/** Create a session directory that only its owner can traverse. */
+function mkdirPrivate(path: string): void {
+	mkdirSync(path, { recursive: true, mode: PRIVATE_SESSION_DIR_MODE });
+	applyPrivateMode(path, PRIVATE_SESSION_DIR_MODE);
+}
+
+/** Create a session file that only its owner can read. */
+function openPrivate(path: string, flags: string): number {
+	const fd = openSync(path, flags, PRIVATE_SESSION_FILE_MODE);
+	try {
+		applyPrivateMode(path, PRIVATE_SESSION_FILE_MODE);
+	} catch (error) {
+		closeSync(fd);
+		throw error;
+	}
+	return fd;
 }
 
 const SESSION_READ_BUFFER_SIZE = 1024 * 1024;
@@ -877,7 +908,7 @@ export class SessionManager {
 		this.sessionDir = normalizePath(sessionDir);
 		this.persist = persist;
 		if (persist && this.sessionDir && !existsSync(this.sessionDir)) {
-			mkdirSync(this.sessionDir, { recursive: true });
+			mkdirPrivate(this.sessionDir);
 		}
 
 		if (sessionFile) {
@@ -978,7 +1009,7 @@ export class SessionManager {
 
 	private _rewriteFile(): void {
 		if (!this.persist || !this.sessionFile) return;
-		const fd = openSync(this.sessionFile, "w");
+		const fd = openPrivate(this.sessionFile, "w");
 		try {
 			for (const entry of this.fileEntries) {
 				writeFileSync(fd, `${JSON.stringify(entry)}\n`);
@@ -1027,7 +1058,7 @@ export class SessionManager {
 		}
 
 		if (!this.flushed) {
-			const fd = openSync(this.sessionFile, "wx");
+			const fd = openPrivate(this.sessionFile, "wx");
 			try {
 				for (const e of this.fileEntries) {
 					writeFileSync(fd, `${JSON.stringify(e)}\n`);
@@ -1596,7 +1627,7 @@ export class SessionManager {
 
 		const dir = sessionDir ? normalizePath(sessionDir) : getDefaultSessionDir(resolvedTargetCwd);
 		if (!existsSync(dir)) {
-			mkdirSync(dir, { recursive: true });
+			mkdirPrivate(dir);
 		}
 
 		// Create new session file with new ID but forked content
@@ -1617,7 +1648,11 @@ export class SessionManager {
 			cwd: resolvedTargetCwd,
 			parentSession: resolvedSourcePath,
 		};
-		writeFileSync(newSessionFile, `${JSON.stringify(newHeader)}\n`, { flag: "wx" });
+		writeFileSync(newSessionFile, `${JSON.stringify(newHeader)}\n`, {
+			flag: "wx",
+			mode: PRIVATE_SESSION_FILE_MODE,
+		});
+		applyPrivateMode(newSessionFile, PRIVATE_SESSION_FILE_MODE);
 
 		// Copy all non-header entries from source
 		for (const entry of sourceEntries) {

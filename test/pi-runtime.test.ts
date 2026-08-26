@@ -28,6 +28,36 @@ function write(path: string, content: string): void {
   writeFileSync(path, content, "utf8");
 }
 
+/**
+ * The harness only creates its session file once an assistant message arrives,
+ * so exercising storage permissions requires a full user/assistant exchange.
+ */
+function appendExchange(sessionManager: { appendMessage: (message: never) => string }): void {
+  const now = Date.now();
+  sessionManager.appendMessage({
+    role: "user",
+    content: [{ type: "text", text: "probe" }],
+    timestamp: now - 1000,
+  } as never);
+  sessionManager.appendMessage({
+    role: "assistant",
+    content: [{ type: "text", text: "ack" }],
+    api: "openai-completions",
+    provider: "test-provider",
+    model: "test-model",
+    usage: {
+      input: 1,
+      output: 1,
+      cacheRead: 0,
+      cacheWrite: 0,
+      totalTokens: 2,
+      cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+    },
+    stopReason: "stop",
+    timestamp: now,
+  } as never);
+}
+
 function extension(command: string): string {
   return `export default function (pi) {
   pi.registerCommand(${JSON.stringify(command)}, {
@@ -243,6 +273,7 @@ describe("Rocky Pi composition boundary", () => {
       const sessionManager = pi.SessionManager.create(projectDir, sessionDirectory);
       sessionManager.appendSessionInfo("permission probe");
       enforcePrivateSessionStorage(sessionManager);
+      appendExchange(sessionManager);
 
       const mode = (path: string) => statSync(path).mode & 0o777;
       expect(mode(sessionDirectory)).toBe(0o700);
@@ -250,6 +281,22 @@ describe("Rocky Pi composition boundary", () => {
     } finally {
       process.umask(previousUmask);
     }
+  });
+
+  it("keeps the harness able to flush its session file after privacy enforcement", () => {
+    if (process.platform === "win32") return;
+
+    const sessionDirectory = join(fixtureRoot, "flush-after-enforcement");
+    const sessionManager = pi.SessionManager.create(projectDir, sessionDirectory);
+    enforcePrivateSessionStorage(sessionManager);
+
+    // The harness creates the session file lazily, on the first assistant
+    // message. Privacy enforcement must not claim the path first.
+    expect(() => appendExchange(sessionManager)).not.toThrow();
+
+    const sessionFile = sessionManager.getSessionFile() as string;
+    expect(statSync(sessionFile).mode & 0o777).toBe(0o600);
+    expect(readFileSync(sessionFile, "utf8")).toContain("probe");
   });
 
   it("classifies which invocations need the coding runtime", () => {
