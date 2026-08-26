@@ -5,7 +5,7 @@
  * part most likely to be wrong — are tested in the Node suite alongside the
  * transcript reducer. The UI layer only renders the result.
  */
-import type { SlashCommand } from "@rocky/contract";
+import type { CommandEntry } from "./commands.js";
 
 /** How many suggestions a popup shows at once. */
 export const COMPLETION_LIMIT = 8;
@@ -31,17 +31,18 @@ export function completionQuery(text: string): string | undefined {
  *
  * Prefix matches come before substring matches, because typing `/co` means the
  * user is far more likely to want `compact` than `skill:git-commit`. Within a
- * tier the core's own order is preserved: extensions, then prompt templates,
- * then skills, which is the order the inherited TUI shows them in.
+ * tier the caller's order is preserved: the client's own commands, then the
+ * core's — extensions, prompt templates, skills — which is the order the
+ * inherited TUI shows them in.
  */
 export function filterCommands(
-  commands: readonly SlashCommand[],
+  commands: readonly CommandEntry[],
   query: string,
   limit: number = COMPLETION_LIMIT,
-): SlashCommand[] {
+): CommandEntry[] {
   const needle = query.toLowerCase();
-  const prefix: SlashCommand[] = [];
-  const substring: SlashCommand[] = [];
+  const prefix: CommandEntry[] = [];
+  const substring: CommandEntry[] = [];
   for (const command of commands) {
     const name = command.name.toLowerCase();
     if (name.startsWith(needle)) {
@@ -76,12 +77,12 @@ export function moveSelection(index: number, length: number, delta: number): num
  * because a space ends the completion query, accepting also closes the popup
  * rather than leaving it matching its own result.
  */
-export function applyCompletion(command: SlashCommand): string {
+export function applyCompletion(command: CommandEntry): string {
   return `/${command.name} `;
 }
 
 /** One rendered suggestion row. */
-export function completionLabel(command: SlashCommand): string {
+export function completionLabel(command: CommandEntry): string {
   const hint = command.argumentHint ? ` ${command.argumentHint}` : "";
   return `/${command.name}${hint}`;
 }

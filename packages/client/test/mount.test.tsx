@@ -15,8 +15,17 @@ import { mountRockyClient } from "../src/index.js";
 function idlePort(): SessionPort {
   return {
     subscribe: () => () => {},
-    execute: async (command: SessionCommand): Promise<CommandResult> =>
-      command.type === "get_state"
+    execute: async (command: SessionCommand): Promise<CommandResult> => {
+      // The fake has to answer the data-bearing commands for real: a result
+      // that claims `ok` while omitting its payload is not a shape the contract
+      // permits, and faking one only tests the client against a lie.
+      if (command.type === "get_commands") {
+        return { type: "command_result", command: "get_commands", ok: true, commands: [] };
+      }
+      if (command.type === "get_available_models") {
+        return { type: "command_result", command: "get_available_models", ok: true, models: [] };
+      }
+      return command.type === "get_state"
         ? {
             type: "command_result",
             command: "get_state",
@@ -34,7 +43,8 @@ function idlePort(): SessionPort {
               pendingMessageCount: 0,
             },
           }
-        : { type: "command_result", command: command.type as never, ok: true },
+        : { type: "command_result", command: command.type as never, ok: true };
+    },
   };
 }
 

@@ -43,6 +43,17 @@ function fakePort() {
           },
         };
       }
+      if (command.type === "get_available_models") {
+        return {
+          type: "command_result",
+          command: "get_available_models",
+          ok: true,
+          models: [
+            { provider: "openai-codex", id: "gpt-5.5", displayName: "GPT-5.5" },
+            { provider: "anthropic", id: "claude-opus-5" },
+          ],
+        };
+      }
       if (command.type === "get_commands") {
         return {
           type: "command_result",
@@ -461,4 +472,84 @@ test("enter submits the typed text rather than the suggestion", async () => {
   await t.renderOnce();
 
   expect(sent.filter((command) => command.type === "prompt")).toEqual([{ type: "prompt", text: "/co" }]);
+});
+
+test("offers /model even though the core never lists it", async () => {
+  const { port } = fakePort();
+  const t = await testRender(() => <App port={port} />, { width: 70, height: 16 });
+  await t.renderOnce();
+
+  await t.mockInput.typeText("/mod");
+  await t.renderOnce();
+  expect(t.captureCharFrame()).toContain("/model");
+});
+
+test("opens the model picker and switches the active model", async () => {
+  const { port, sent } = fakePort();
+  const t = await testRender(() => <App port={port} />, { width: 70, height: 16 });
+  await t.renderOnce();
+
+  await t.mockInput.typeText("/model");
+  t.mockInput.pressEnter();
+  await t.renderOnce();
+  await t.renderOnce();
+  const frame = t.captureCharFrame();
+  expect(frame).toContain("openai-codex/gpt-5.5");
+  expect(frame).toContain("anthropic/claude-opus-5");
+  // The command opened a picker; it was never sent to the core as a prompt.
+  expect(sent.filter((command) => command.type === "prompt")).toEqual([]);
+
+  t.mockInput.pressArrow("down");
+  await t.renderOnce();
+  t.mockInput.pressEnter();
+  await t.renderOnce();
+
+  expect(sent.filter((command) => command.type === "set_model")).toEqual([
+    { type: "set_model", provider: "anthropic", modelId: "claude-opus-5" },
+  ]);
+  // Picking closes the picker and hands the input back.
+  expect(t.captureCharFrame()).not.toContain("Select a model");
+});
+
+// Escape never reaches the key handler, so without ctrl+c the only way out of
+// the picker would be to pick something.
+test("ctrl+c closes the picker instead of quitting", async () => {
+  const { port, sent } = fakePort();
+  let quits = 0;
+  const t = await testRender(() => <App port={port} onQuit={() => (quits += 1)} />, {
+    width: 70,
+    height: 16,
+  });
+  await t.renderOnce();
+
+  await t.mockInput.typeText("/model");
+  t.mockInput.pressEnter();
+  await t.renderOnce();
+  await t.renderOnce();
+  expect(t.captureCharFrame()).toContain("Select a model");
+
+  t.mockInput.pressCtrlC();
+  await t.renderOnce();
+  expect(t.captureCharFrame()).not.toContain("Select a model");
+  expect(quits).toBe(0);
+  expect(sent.filter((command) => command.type === "set_model")).toEqual([]);
+});
+
+test("filters the picker as the user types", async () => {
+  const { port } = fakePort();
+  const t = await testRender(() => <App port={port} />, { width: 70, height: 16 });
+  await t.renderOnce();
+
+  await t.mockInput.typeText("/model");
+  t.mockInput.pressEnter();
+  await t.renderOnce();
+  await t.renderOnce();
+
+  await t.mockInput.typeText("opus");
+  await t.renderOnce();
+  const frame = t.captureCharFrame();
+  expect(frame).toContain("anthropic/claude-opus-5");
+  // The status line still names the active model, so assert on the picker row's
+  // own display name rather than on the label it shares with the status line.
+  expect(frame).not.toContain("GPT-5.5");
 });

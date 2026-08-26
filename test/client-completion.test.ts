@@ -6,6 +6,7 @@
  * "when is the popup open" rule are the parts most likely to be wrong.
  */
 import { describe, expect, it } from "vitest";
+import type { CommandEntry } from "../packages/client/src/model/commands.js";
 import {
   applyCompletion,
   clampSelection,
@@ -14,13 +15,12 @@ import {
   filterCommands,
   moveSelection,
 } from "../packages/client/src/model/completion.js";
-import type { SlashCommand } from "../src/contract/index.js";
 
-const COMMANDS: SlashCommand[] = [
-  { name: "compact", description: "Compact the conversation", source: "extension" },
-  { name: "explain", source: "prompt", argumentHint: "<path>" },
-  { name: "skill:git-commit", source: "skill" },
-  { name: "copy", source: "extension" },
+const COMMANDS: CommandEntry[] = [
+  { name: "compact", description: "Compact the conversation", origin: "core" },
+  { name: "explain", origin: "core", argumentHint: "<path>" },
+  { name: "skill:git-commit", origin: "core" },
+  { name: "copy", origin: "core" },
 ];
 
 describe("completionQuery", () => {
@@ -90,13 +90,13 @@ describe("selection", () => {
 
 describe("accepting a suggestion", () => {
   it("leaves a trailing space, which also closes the popup", () => {
-    const text = applyCompletion(COMMANDS[1] as SlashCommand);
+    const text = applyCompletion(COMMANDS[1] as CommandEntry);
     expect(text).toBe("/explain ");
     expect(completionQuery(text)).toBeUndefined();
   });
 
   it("shows the argument hint in the label", () => {
-    expect(completionLabel(COMMANDS[1] as SlashCommand)).toBe("/explain <path>");
-    expect(completionLabel(COMMANDS[0] as SlashCommand)).toBe("/compact");
+    expect(completionLabel(COMMANDS[1] as CommandEntry)).toBe("/explain <path>");
+    expect(completionLabel(COMMANDS[0] as CommandEntry)).toBe("/compact");
   });
 });

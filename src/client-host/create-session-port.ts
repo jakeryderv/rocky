@@ -86,12 +86,25 @@ export async function createRockySessionPort(
       sessionManager,
     } as never);
 
+    // `getAvailableSnapshot` is what the harness's own RPC mode reads for both
+    // listing and resolving, so the client host cannot diverge from it on which
+    // models exist or on which object `setModel` is given.
+    const availableModels = () =>
+      (
+        session as unknown as { modelRuntime?: { getAvailableSnapshot(): readonly unknown[] } }
+      ).modelRuntime?.getAvailableSnapshot() ?? [];
+
     const adapter = new PiAgentSessionAdapter(session as never, {
       cwd,
       // Read on every call rather than snapshotted: extensions register
       // commands asynchronously and the resource loader reloads, so a list
       // captured at startup goes stale within the session.
       listCommands: () => collectSlashCommands(session as unknown as SlashCommandSources),
+      listModels: () => availableModels() as readonly { provider: string; id: string }[],
+      lookupModel: (provider, modelId) =>
+        (availableModels() as readonly { provider: string; id: string }[]).find(
+          (model) => model.provider === provider && model.id === modelId,
+        ),
     });
     adapter.start();
     restoreOnce();
