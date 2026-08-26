@@ -278,6 +278,9 @@ export function toMessageDelta(event: PiAssistantMessageEventLike): MessageDelta
   if (event.type === "thinking_delta") {
     return { type: "thinking_delta", index, thinking: event.delta ?? "" };
   }
+  if (event.type === "toolcall_start") {
+    return { type: "tool_call_start", index };
+  }
   if (event.type === "toolcall_delta") {
     return { type: "tool_call_delta", index, argumentsJson: event.delta ?? "" };
   }

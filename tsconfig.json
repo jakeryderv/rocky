@@ -16,7 +16,11 @@
     "isolatedModules": true,
     "resolveJsonModule": true,
     "skipLibCheck": true,
-    "forceConsistentCasingInFileNames": true
+    "forceConsistentCasingInFileNames": true,
+    "baseUrl": ".",
+    "paths": {
+      "@rocky/contract": ["./src/contract/index.ts"]
+    }
   },
-  "include": ["src/**/*.ts", "test/**/*.ts", "vitest.config.ts"]
+  "include": ["src/**/*.ts", "test/**/*.ts", "vitest.config.ts", "packages/client/src/model/**/*.ts"]
 }

@@ -73,6 +73,7 @@ export const FIXTURE_EVENTS: SessionEvent[] = [
   { type: "message_start", role: "tool_result" },
   { type: "message_delta", delta: { type: "thinking_delta", index: 0, thinking: "considering" } },
   { type: "message_delta", delta: { type: "text_delta", index: 1, text: "Hello" }, usage: FIXTURE_USAGE },
+  { type: "message_delta", delta: { type: "tool_call_start", index: 2 } },
   {
     type: "message_delta",
     delta: { type: "tool_call_delta", index: 2, argumentsJson: '{"path":' },
@@ -138,6 +139,7 @@ export const FIXTURE_COMMAND_RESULTS: CommandResult[] = [
 export const FIXTURE_DELTAS: MessageDelta[] = [
   { type: "text_delta", index: 0, text: "Hello" },
   { type: "thinking_delta", index: 1, thinking: "considering" },
+  { type: "tool_call_start", index: 2 },
   { type: "tool_call_delta", index: 2, argumentsJson: '{"path":' },
   { type: "tool_call_end", index: 2, id: "call_1", name: "read", arguments: { path: "README.md" } },
 ];

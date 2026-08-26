@@ -25,7 +25,7 @@ function applyMode(path: string, mode: number): void {
   }
 }
 
-function ensurePrivateDirectory(path: string): void {
+export function ensurePrivateDirectory(path: string): void {
   mkdirSync(path, { recursive: true, mode: PRIVATE_DIRECTORY_MODE });
   applyMode(path, PRIVATE_DIRECTORY_MODE);
 }
@@ -55,7 +55,7 @@ export function enforcePrivateSessionStorage(sessionManager: SessionStoragePaths
   }
 }
 
-function beginPrivateCreationMask(): () => void {
+export function beginPrivateCreationMask(): () => void {
   if (process.platform === "win32") {
     return () => {};
   }
@@ -167,6 +167,56 @@ export function prepareRockyEnvironment(): void {
   } else if (process.env["PI_TELEMETRY"] === undefined) {
     process.env["PI_TELEMETRY"] = "0";
   }
+}
+
+/**
+ * Session options that carry Rocky's discovery and trust policy.
+ *
+ * Returned as a plain value rather than applied inside a session factory so a
+ * test can assert the policy without loading the harness, starting a session,
+ * or touching `~/.rocky/agent`. Every entry point that creates a session —
+ * the CLI and the headless client host — must build its options from here, or
+ * the two silently diverge on exactly the questions that matter: which skills
+ * load, and whether a project is trusted.
+ */
+export interface RockySessionOptions {
+  resourceLoaderOptions: {
+    noSkills: true;
+    extensionFactories: InlineExtension[];
+  };
+  resourceLoaderReloadOptions: {
+    resolveProjectTrust: (input: { extensionsResult?: unknown }) => Promise<boolean>;
+  };
+}
+
+export interface BuildRockySessionOptionsInput {
+  cwd: string;
+  agentDir: string;
+  /** Resolves trust the way the harness does. Injected so tests stay offline. */
+  resolveTrust: (input: { cwd: string; extensionsResult?: unknown }) => Promise<boolean>;
+  /** Restores the startup umask once session storage exists. */
+  restoreCreationMask?: () => void;
+}
+
+export function buildRockySessionOptions(input: BuildRockySessionOptionsInput): RockySessionOptions {
+  const restore = input.restoreCreationMask ?? (() => {});
+  return {
+    resourceLoaderOptions: {
+      // Rocky replaces the harness's general skill discovery entirely; the
+      // inline extension adds back only Rocky-owned roots after trust.
+      noSkills: true,
+      extensionFactories: [privateStorageExtension(restore), rockySkillDiscoveryExtension(input.agentDir)],
+    },
+    resourceLoaderReloadOptions: {
+      // Without this, the extensions' project_trust handler is never consulted
+      // and every project silently reads as untrusted.
+      resolveProjectTrust: ({ extensionsResult }) =>
+        input.resolveTrust({
+          cwd: input.cwd,
+          ...(extensionsResult !== undefined ? { extensionsResult } : {}),
+        }),
+    },
+  };
 }
 
 export async function loadPiRuntime(): Promise<typeof import("@jakeryderv/rocky-harness")> {

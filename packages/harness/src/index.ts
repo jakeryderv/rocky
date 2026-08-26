@@ -329,6 +329,7 @@ export {
 	type ProjectTrustStoreEntry,
 	type ProjectTrustUpdate,
 } from "./core/trust-manager.ts";
+export { type ResolveProjectTrustedOptions, resolveProjectTrusted } from "./core/project-trust.ts";
 // Main entry point
 export { type MainOptions, main } from "./main.ts";
 // Run modes for programmatic SDK usage

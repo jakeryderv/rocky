@@ -30,6 +30,16 @@
       }
     }
   },
+  "overrides": [
+    {
+      "includes": ["packages/client/**/*.tsx"],
+      "linter": {
+        "rules": {
+          "a11y": "off"
+        }
+      }
+    }
+  ],
   "javascript": {
     "formatter": {
       "quoteStyle": "double",

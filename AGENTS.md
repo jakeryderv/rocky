@@ -14,7 +14,16 @@ when network access is appropriate.
 - `src/` — the `rocky` CLI and Rocky policy composition over the harness.
 - `src/contract/` — the client-agnostic session contract (ADR 0004). It must import nothing outside itself:
   no `@earendil-works/*`, no harness, no other Rocky module. Translation belongs in `src/adapter/`.
+- `packages/client` — Rocky's OpenTUI + Solid terminal client (ADR 0005). Bun-only to run; consumes only
+  `@rocky/contract` through a `SessionPort` and must never import the harness or `@earendil-works/*`
+  (`test/client-isolation.test.ts` enforces this over both `src` and `test`).
+- `src/client-host/` — builds a real `SessionPort`; the only file allowed to know both vocabularies.
 - `docs/decisions/` — ADRs; `docs/roadmap.md` — sequencing and carried debt.
+
+## Gates
+
+`npm run verify` is the Node gate and must stay Node-only. Bun-only work runs in `npm run client:verify`
+(typecheck, render tests, client smoke) and a separate CI job. Report both when touching the client.
 
 ## Invariants
 
@@ -34,6 +43,9 @@ when network access is appropriate.
 - No self-update and no startup version check in the harness; `update --extensions`/`--models` stay.
 - Do not store credentials, sessions, trust decisions, logs, provider payloads, or model output in `.rocky`.
 - Do not commit generated `dist`, coverage, or reports. Keep `npm-shrinkwrap.json` current.
+- Every entry point that creates a session must build its options from `buildRockySessionOptions` in
+  `src/runtime/pi-runtime.ts`, or the CLI and the client host silently diverge on skill discovery and project
+  trust.
 - Rocky's changelog surfaces are Rocky's: root `CHANGELOG.md` and `packages/harness/CHANGELOG.md`; upstream
   history stays in `packages/harness/CHANGELOG.upstream.md`.
 

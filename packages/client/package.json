@@ -1,0 +1,18 @@
+{
+  "name": "@jakeryderv/rocky-client",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Rocky's OpenTUI + Solid terminal client, consuming only the Rocky session contract",
+  "main": "./src/index.tsx",
+  "scripts": {
+    "test": "bun test",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "devDependencies": {
+    "@opentui/core": "0.5.8",
+    "@opentui/solid": "0.5.8",
+    "@types/bun": "1.4.0",
+    "solid-js": "1.9.12"
+  }
+}

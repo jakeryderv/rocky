@@ -28,24 +28,20 @@ priorities change.
   roles, missing delta block indices, ambiguous tool-call streaming, frozen usage, dropped error text) and one
   vacuous exhaustiveness test, all fixed with regression tests derived from upstream shapes. See ADR 0004.
 
+- **First OpenTUI + Solid client slice** (`packages/client`) over a `SessionPort`, with a headless Bun render
+  suite, a root-level client smoke, and a separate Bun CI job. See ADR 0005.
+
 ## Next (in order)
 
-1. **OpenTUI + Solid client on Bun, with the contract** — the first Rocky-owned TUI, consuming only the
-   contract, built as a vertical slice so the client's real needs drive what the contract grows (ADR 0004).
-   Runtime facts established 2026-08-25 by probing the real package: OpenTUI 0.5.8 renders **only under Bun**
-   (Node needs >= 26.4 with `--experimental-ffi`; on Node 24 the module imports fine but the native FFI throws
-   at renderer construction, so the failure is at runtime, not at import). Native code ships as per-platform
-   npm `optionalDependencies` with no install scripts, so `npm ci --ignore-scripts` is unaffected. A working
-   app requires `babel-preset-solid` with `generate: "universal"`; the shipped `jsx-runtime` compiles under
-   plain `tsc` but is **not reactive** — signals never propagate — so there is no tsc-only path.
-   `testRender`/`captureCharFrame` give deterministic headless assertions with no model call.
-   Known blockers before building: the client package must be excluded from Biome's `a11y` rules (terminal
-   tags have no ARIA roles), and `state_changed` is declared in the contract but never emitted, so a client
-   must poll `get_state` until that is wired.
-   Promote further RPC-protocol surfaces (session fork/clone/switch, bash execution, extension UI, slash
-   commands) into the contract as the client consumes them. Keep the inherited `InteractiveMode` reachable
-   (e.g. `rocky --classic`) until the new client covers daily use, then delete `modes/interactive` from the
-   fork and drop the `pi-tui` dependency.
+1. **Grow the client to daily use** — the first slice renders a streaming transcript (text, thinking, tool
+   calls with results), a prompt input, abort on escape, and a status line; it is not yet a daily driver.
+   Next, in rough order: scrollback and viewport management for long sessions, a real editor (history,
+   multi-line, paste), slash-command discovery (`get_commands` exists in the harness RPC protocol but not the
+   contract), session list and resume, incremental tool output (`tool_execution_update` and
+   `bash_execution_update` are dropped by the adapter today), and `state_changed` as a push so the client can
+   stop polling `get_state`. Keep the inherited `InteractiveMode` as the default until the client covers daily
+   use, then delete `modes/interactive` and drop `pi-tui`.
+
 2. **Bun toolchain migration** — move install/lockfile/CI/bin to Bun once the client work makes Bun the
    actual runtime (`bun install`, lockfile pinning discipline equivalent to npm-shrinkwrap, CI image, test
    runner decision for root vs harness suites).

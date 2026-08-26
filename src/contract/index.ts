@@ -4,4 +4,5 @@
  * Clients depend on this module and nothing else from Rocky's internals.
  * See `types.ts` for the isolation rule this directory must uphold.
  */
+export * from "./port.js";
 export * from "./types.js";

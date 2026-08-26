@@ -212,7 +212,23 @@ export type CommandResult =
       models: ModelRef[];
     }
   | { type: "command_result"; id?: string | undefined; command: "set_model"; ok: true; model: ModelRef }
-  | { type: "command_result"; id?: string | undefined; command: SessionCommandType; ok: true }
+  /**
+   * Acknowledgement for commands that return no payload.
+   *
+   * The data-bearing commands are excluded so that narrowing on `command`
+   * actually discriminates — otherwise this variant overlaps them and a client
+   * cannot reach `state`, `messages`, or `model` after a `command === "..."`
+   * check.
+   */
+  | {
+      type: "command_result";
+      id?: string | undefined;
+      command: Exclude<
+        SessionCommandType,
+        "get_state" | "get_messages" | "get_available_models" | "set_model"
+      >;
+      ok: true;
+    }
   | { type: "command_result"; id?: string | undefined; command: string; ok: false; error: string };
 
 // ============================================================================
@@ -234,6 +250,8 @@ export type MessageDelta =
    */
   | { type: "text_delta"; index: number; text: string }
   | { type: "thinking_delta"; index: number; thinking: string }
+  /** A tool-call block opened at `index`; its name and arguments stream after. */
+  | { type: "tool_call_start"; index: number }
   /** An argument fragment to concatenate. Not valid JSON on its own. */
   | { type: "tool_call_delta"; index: number; argumentsJson: string }
   /** The authoritative tool call. Replaces whatever the fragments accumulated. */

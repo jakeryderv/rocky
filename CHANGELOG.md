@@ -2,6 +2,19 @@
 
 ## Unreleased
 
+- Add `packages/client`, Rocky's first OpenTUI + Solid terminal client: a streaming transcript (text,
+  thinking, tool calls with their results), a prompt input, abort on escape, and a status line with model,
+  thinking level, streaming state, and live token usage. It consumes only the contract, through a new
+  `SessionPort` (`src/contract/port.ts`), and is built by `src/client-host/`. Bun-only to run — OpenTUI's
+  native FFI has no Node 24 backend — so the Node gate stays Node-only and a separate `client:verify` plus CI
+  job cover the Bun lane. See ADR 0005.
+- Add `buildRockySessionOptions` so the CLI and the client host cannot diverge on skill discovery or project
+  trust, and export `resolveProjectTrusted` from the harness so the host resolves trust the same way the CLI
+  does rather than reimplementing it.
+- Fix `CommandResult` so narrowing on `command` discriminates: the catch-all acknowledgement variant
+  overlapped the data-bearing ones, leaving `state`, `messages`, and `model` unreachable to a client.
+- Add `tool_call_start` to `MessageDelta`, completing the delta union against upstream's streaming events.
+
 - **Fix six contract-mapping defects found by adversarial review**, each of which would have rendered visibly
   wrong output in a client: tool results were stringified as `[{"type":"text",…}]` instead of flattened;
   `message_start` reported every message as `assistant`, opening phantom bubbles for user prompts and tool

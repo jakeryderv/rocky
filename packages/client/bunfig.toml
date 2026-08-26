@@ -1,0 +1,7 @@
+# babel-preset-solid is mandatory: @opentui/solid's shipped jsx-runtime compiles
+# under plain tsc and renders a first frame, but props are evaluated eagerly so
+# signals never propagate. The preload registers the Solid transform plugin.
+preload = ["@opentui/solid/preload"]
+
+[test]
+preload = ["@opentui/solid/preload"]

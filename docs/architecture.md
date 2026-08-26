@@ -9,10 +9,11 @@ rocky executable (src/cli.ts)
         -> harness session/runtime services, InteractiveMode
         -> exactly pinned upstream @earendil-works/pi-ai, pi-agent-core, pi-tui, pi-client, pi-protocol
 
-future clients (OpenTUI + Solid, web, remote)
-  -> src/contract/ (serializable commands/events/state; no harness or Pi types)
-     -> src/adapter/ (PiAgentSessionAdapter, pure mapping functions)
-        -> harness AgentSession
+packages/client (OpenTUI + Solid, Bun-only; also web/remote later)
+  -> src/contract/ (serializable commands/events/state + SessionPort; no harness or Pi types)
+     -> src/client-host/ (builds a real SessionPort; the only both-vocabularies file)
+        -> src/adapter/ (PiAgentSessionAdapter, pure mapping functions)
+           -> harness AgentSession
 ```
 
 The harness is a source fork of `@earendil-works/pi-coding-agent` v0.84.2 (vendored pristine in git history,
@@ -54,6 +55,22 @@ fallbacks so an upstream addition degrades to a safe default.
 The contract is deliberately smaller than the RPC protocol. Session fork/clone/switch, bash execution,
 extension UI, and slash commands stay in the harness protocol until a client actually consumes them; growing
 the contract alongside its first client is what keeps it from modeling surface nobody reads.
+
+## Client
+
+`packages/client` is Rocky's own terminal client: OpenTUI + Solid, private, never built (Bun transpiles it from
+source). It talks to a `SessionPort` — `subscribe` plus `execute`, over serializable values only — so it can be
+driven by a fake port in tests and by a transport later without changing. `src/client-host/` is the only place
+that knows both the harness and the contract.
+
+The client renders only under Bun: OpenTUI's native FFI has no backend on Node 24 (Node >= 26.4 with
+`--experimental-ffi` would work). The repo toolchain stays npm + Node, so there are two gates — `npm run
+verify` is Node-only and adds just `client:typecheck`; `npm run client:verify` and a separate CI job run the
+Bun typecheck, render tests, and client smoke. Bun-only specifiers are held in variables so the Node program
+never tries to resolve them. See ADR 0005.
+
+The pure transcript reducer (`packages/client/src/model/transcript.ts`) carries the logic most likely to be
+wrong and runs in the Node suite; the Solid layer only maps its output to elements.
 
 ## State and trust
 

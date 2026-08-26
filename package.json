@@ -34,8 +34,13 @@
     "test:coverage": "vitest run --coverage",
     "smoke": "npm run build && npm run smoke:built",
     "smoke:built": "node scripts/smoke.mjs",
-    "verify": "npm run check && npm run build && npm run typecheck && npm run test:coverage && npm test --workspace @jakeryderv/rocky-harness && npm run smoke:built",
-    "security:audit": "npm audit --omit=dev --audit-level=high"
+    "verify": "npm run check && npm run build && npm run typecheck && npm run client:typecheck && npm run test:coverage && npm test --workspace @jakeryderv/rocky-harness && npm run smoke:built",
+    "security:audit": "npm audit --omit=dev --audit-level=high",
+    "client": "bun --bun -e \"import('./dist/client-host/tui-entry.js').then(m=>m.runRockyClient())\"",
+    "client:typecheck": "tsc -p packages/client/tsconfig.json --noEmit",
+    "client:test": "bun test --cwd packages/client",
+    "client:smoke": "bun scripts/client-smoke.mjs",
+    "client:verify": "npm run client:typecheck && npm run client:test && npm run client:smoke"
   },
   "dependencies": {
     "@jakeryderv/rocky-harness": "*"
