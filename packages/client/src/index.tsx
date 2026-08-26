@@ -12,7 +12,12 @@ export { App } from "./App.js";
 export * from "./model/transcript.js";
 export { createSessionStore } from "./session-store.js";
 
-export async function mountRockyClient(port: SessionPort): Promise<void> {
-  // Ctrl+C is handled by the host, which owns session teardown.
-  await render(() => <App port={port} />, { exitOnCtrlC: false, targetFps: 30 });
+export async function mountRockyClient(
+  port: SessionPort,
+  options: { onQuit?: (() => void) | undefined } = {},
+): Promise<void> {
+  // The renderer's built-in Ctrl+C exits the process directly, which would skip
+  // session teardown. The app handles Ctrl+C instead and calls onQuit before
+  // destroying the renderer.
+  await render(() => <App port={port} onQuit={options.onQuit} />, { exitOnCtrlC: false, targetFps: 30 });
 }

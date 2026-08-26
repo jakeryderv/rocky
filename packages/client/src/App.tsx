@@ -4,19 +4,52 @@
  * Receives a `SessionPort` and touches nothing else from Rocky, so it renders
  * identically against a real session and a fake one.
  */
-import type { MouseEvent, ScrollBoxRenderable } from "@opentui/core";
-import { useKeyboard } from "@opentui/solid";
+import type { InputRenderable, MouseEvent, ScrollBoxRenderable } from "@opentui/core";
+import { useKeyboard, usePaste, useRenderer } from "@opentui/solid";
 import type { SessionPort } from "@rocky/contract";
 import { createEffect, createMemo, createSignal, For, Show } from "solid-js";
+import { emptyHistory, newer, older, remember } from "./model/history.js";
 import { entryLines } from "./model/transcript.js";
 import { createSessionStore } from "./session-store.js";
 
 const ROLE_PREFIX = { user: "›", assistant: "🅡", tool_result: "⚙" } as const;
 
-export function App(props: { port: SessionPort }) {
+export function App(props: { port: SessionPort; onQuit?: (() => void) | undefined }) {
   const store = createSessionStore(props.port);
   const [pinned, setPinned] = createSignal(true);
+  const [history, setHistory] = createSignal(emptyHistory());
+  const [pending, setPending] = createSignal<string[]>([]);
   let scroller: ScrollBoxRenderable | undefined;
+  let input: InputRenderable | undefined;
+  const renderer = useRenderer();
+
+  /** Quit: tear the renderer down so the terminal is left usable. */
+  const quit = () => {
+    props.onQuit?.();
+    renderer.destroy();
+  };
+
+  const showInInput = (text: string) => {
+    if (input) {
+      input.value = text;
+    }
+  };
+
+  const submit = (value: string) => {
+    // A multi-line paste is held aside and prepended on submit, because the
+    // single-line input cannot represent the newlines itself.
+    const held = pending();
+    const text = held.length > 0 ? [...held, value].join("\n") : value;
+    if (text.trim().length === 0) {
+      return;
+    }
+    setPending([]);
+    setHistory((current) => remember(current, text));
+    // The input keeps its text after Enter; clear it so the next prompt starts
+    // empty and history navigation has a known baseline.
+    showInInput("");
+    void store.submit(text);
+  };
 
   // These handlers run during event dispatch, before scrollTop is updated, so
   // sampling directly would read the pre-scroll position.
@@ -36,10 +69,41 @@ export function App(props: { port: SessionPort }) {
     setPinned(atBottom());
   });
 
+  usePaste((event) => {
+    const text = new TextDecoder().decode(event.bytes).replace(/\r\n?/g, "\n");
+    const lines = text.split("\n");
+    if (lines.length <= 1) {
+      // A single-line paste is just typing; let the input handle it.
+      return;
+    }
+    event.preventDefault();
+    // Keep every line but the last; the last stays editable in the input.
+    setPending((current) => [...current, ...lines.slice(0, -1)]);
+    showInInput(`${input?.value ?? ""}${lines.at(-1) ?? ""}`);
+  });
+
   useKeyboard((key) => {
-    // Escape aborts an in-flight turn; Ctrl+C is left to the host.
-    if (key.name === "escape") {
-      void store.abort();
+    // Ctrl+C aborts a running turn, and quits when idle — the usual REPL
+    // convention, and it means a long turn cannot be ended by accident.
+    //
+    // Escape is deliberately not used: it never reaches useKeyboard at all
+    // (the key parser swallows it as an escape-sequence prefix), so a binding
+    // on it would be silently dead.
+    if (key.name === "c" && key.ctrl) {
+      if (store.transcript().streaming) {
+        void store.abort();
+      } else {
+        quit();
+      }
+      return;
+    }
+    if (key.name === "up" || key.name === "down") {
+      const current = input?.value ?? "";
+      const move = key.name === "up" ? older(history(), current) : newer(history(), current);
+      setHistory(move.state);
+      if (move.text !== undefined) {
+        showInInput(move.text);
+      }
     }
   });
 
@@ -122,15 +186,20 @@ export function App(props: { port: SessionPort }) {
         {status()}
       </text>
 
+      <Show when={pending().length > 0}>
+        <text fg="#888888" style={{ flexShrink: 0 }}>
+          + {pending().length} pasted line{pending().length === 1 ? "" : "s"}
+        </text>
+      </Show>
+
       <input
-        focused
-        placeholder="Ask Rocky…  (esc aborts)"
-        style={{ flexShrink: 0 }}
-        on:enter={(value: string) => {
-          if (value.trim().length > 0) {
-            void store.submit(value);
-          }
+        ref={(element: InputRenderable) => {
+          input = element;
         }}
+        focused
+        placeholder="Ask Rocky…   ↑ history · ctrl+c aborts, or quits when idle"
+        style={{ flexShrink: 0 }}
+        on:enter={(value: string) => submit(value)}
       />
     </box>
   );

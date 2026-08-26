@@ -312,3 +312,76 @@ test("keeps the input focused when the transcript is clicked", async () => {
   await t.flush();
   expect((input as { focused: boolean }).focused).toBe(true);
 });
+
+// Neither review caught that the client could not be exited, because nothing
+// tried to leave. These tests do.
+test("ctrl+c quits when idle and disposes the session", async () => {
+  const { port } = fakePort();
+  let quits = 0;
+  const t = await testRender(() => <App port={port} onQuit={() => (quits += 1)} />, {
+    width: 40,
+    height: 10,
+  });
+  await t.flush();
+
+  await t.mockInput.pressKey("\x03");
+  await t.flush();
+
+  expect(quits).toBe(1);
+});
+
+// A long turn must not be endable by accident.
+test("ctrl+c aborts instead of quitting while a turn is streaming", async () => {
+  const { port, emit, sent } = fakePort();
+  let quits = 0;
+  const t = await testRender(() => <App port={port} onQuit={() => (quits += 1)} />, {
+    width: 40,
+    height: 10,
+  });
+  await t.flush();
+
+  emit({ type: "turn_start" });
+  await t.flush();
+
+  await t.mockInput.pressKey("\x03");
+  await t.flush();
+
+  expect(sent.some((command) => command.type === "abort")).toBe(true);
+  expect(quits).toBe(0);
+});
+
+test("recalls a previous prompt with the up arrow", async () => {
+  const { port } = fakePort();
+  const t = await testRender(() => <App port={port} />, { width: 50, height: 10 });
+  await t.flush();
+
+  const input = findRenderable(t.renderer as never, "InputRenderable") as unknown as { value: string };
+  await t.mockInput.typeText("first prompt");
+  await t.mockInput.pressEnter();
+  await t.flush();
+  expect(input.value).toBe("");
+
+  await t.mockInput.pressArrow("up");
+  await t.flush();
+  expect(input.value).toBe("first prompt");
+
+  await t.mockInput.pressArrow("down");
+  await t.flush();
+  expect(input.value).toBe("");
+});
+
+test("holds a multi-line paste aside and submits it whole", async () => {
+  const { port, sent } = fakePort();
+  const t = await testRender(() => <App port={port} />, { width: 50, height: 12 });
+  await t.flush();
+
+  await t.mockInput.pasteBracketedText("line one\nline two\nline three");
+  await t.flush();
+  expect(t.captureCharFrame()).toContain("2 pasted lines");
+
+  await t.mockInput.pressEnter();
+  await t.flush();
+
+  const prompt = sent.find((command) => command.type === "prompt") as { text: string } | undefined;
+  expect(prompt?.text).toBe("line one\nline two\nline three");
+});

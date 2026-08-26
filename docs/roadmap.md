@@ -35,8 +35,9 @@ priorities change.
 
 1. **Grow the client to daily use** — the first slice renders a streaming transcript (text, thinking, tool
    calls with results), a prompt input, abort on escape, and a status line; it is not yet a daily driver.
-   Scrollback and incremental tool output have landed. Next, in rough order: a real editor (history,
-   multi-line, paste), slash-command discovery (`get_commands` exists in the harness RPC protocol but not the
+   Scrollback, incremental tool output, a working quit path, prompt history, and multi-line paste have
+   landed. Next, in rough order: true multi-line editing in the input itself (today a pasted block is held
+   aside rather than editable), slash-command discovery (`get_commands` exists in the harness RPC protocol but not the
    contract), session list and resume, incremental tool output (`tool_execution_update` and
    `bash_execution_update` are dropped by the adapter today), and `state_changed` as a push so the client can
    stop polling `get_state`. Keep the inherited `InteractiveMode` as the default until the client covers daily

@@ -27,12 +27,31 @@ export async function runRockyClient(options: { cwd?: string } = {}): Promise<vo
   await import(preloadSpecifier);
 
   const { port, dispose } = await createRockySessionPort(options);
+  let disposed = false;
+  const disposeOnce = () => {
+    if (!disposed) {
+      disposed = true;
+      dispose();
+    }
+  };
+
+  // A signal can still arrive when the terminal is not in raw mode (the app
+  // handles Ctrl+C itself once it is), so tear down on those too.
+  const onSignal = () => {
+    disposeOnce();
+    process.exit(0);
+  };
+  process.once("SIGINT", onSignal);
+  process.once("SIGTERM", onSignal);
+
   try {
     const client = (await import(clientSpecifier)) as {
-      mountRockyClient: (port: unknown) => Promise<void>;
+      mountRockyClient: (port: unknown, options?: { onQuit?: () => void }) => Promise<void>;
     };
-    await client.mountRockyClient(port);
+    await client.mountRockyClient(port, { onQuit: disposeOnce });
   } finally {
-    dispose();
+    process.off("SIGINT", onSignal);
+    process.off("SIGTERM", onSignal);
+    disposeOnce();
   }
 }

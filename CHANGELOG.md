@@ -2,6 +2,20 @@
 
 ## Unreleased
 
+- **Fix: the client could not be exited.** `exitOnCtrlC` was disabled with a comment saying the host handled
+  Ctrl+C; the host handled nothing, so there was no quit path at all. Ctrl+C now aborts a running turn and
+  quits when idle, disposing the session and destroying the renderer so the terminal is left usable; the host
+  also tears down on SIGINT/SIGTERM.
+- **Fix: abort-on-escape never worked.** Escape does not reach `useKeyboard` at all — the key parser swallows
+  it as an escape-sequence prefix — so the binding was dead while the input placeholder advertised it. Abort
+  moved onto Ctrl+C, which is verified by a test.
+- **Fix: the input kept its text after Enter**, so the next prompt started with the previous one still in the
+  box and history navigation had no baseline.
+- Client: prompt history on ↑/↓, including restoring the half-typed draft when walking back past the newest
+  entry.
+- Client: multi-line paste is held aside (shown as `+ N pasted lines`) and submitted as one prompt, since the
+  single-line input cannot represent the newlines itself.
+
 - Client: scrollable transcript. The transcript now lives in a `<scrollbox>` pinned to the newest content, with
   a `↓ more below` indicator when scrolled away; previously anything past the terminal height simply overflowed.
 - Client: show a running tool's output. New `tool_progress` contract event carries the cumulative snapshot the
