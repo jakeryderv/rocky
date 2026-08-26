@@ -7,7 +7,7 @@
 import type { MouseEvent, ScrollBoxRenderable, TextareaRenderable } from "@opentui/core";
 import { defaultTextareaKeyBindings } from "@opentui/core";
 import { useKeyboard, useRenderer } from "@opentui/solid";
-import type { ModelRef, SessionPort, SessionSummary } from "@rocky/contract";
+import type { ModelRef, QueueMode, SessionPort, SessionSummary } from "@rocky/contract";
 import { createEffect, createMemo, createSignal, For, Show } from "solid-js";
 import { mergeCommands, parseBashPrefix, routeSubmission } from "./model/commands.js";
 import {
@@ -24,6 +24,12 @@ import { filterModels, isActiveModel, modelLabel } from "./model/picker.js";
 import { filterSessions, sessionLabel, sortSessions } from "./model/sessions.js";
 import { entryLines } from "./model/transcript.js";
 import { createSessionStore } from "./session-store.js";
+
+/** One queued message, on one line. */
+function queuedPreview(text: string, width = 60): string {
+  const flat = text.replace(/\s+/g, " ").trim();
+  return flat.length > width ? `${flat.slice(0, width - 1)}…` : flat;
+}
 
 const ROLE_PREFIX = { user: "›", assistant: "🅡", tool_result: "⚙", bash: "$" } as const;
 
@@ -129,6 +135,35 @@ export function App(props: { port: SessionPort; onQuit?: (() => void) | undefine
     return true;
   };
 
+  /** The other side of `CLIENT_COMMANDS`: a command offered is a command run. */
+  const runClientCommand = (name: string, args: string) => {
+    const flip = (mode: QueueMode | undefined): QueueMode =>
+      mode === "one-at-a-time" ? "all" : "one-at-a-time";
+    switch (name) {
+      case "model":
+        openPicker("model");
+        return;
+      case "resume":
+        openPicker("session");
+        return;
+      case "new":
+        void store.newSession();
+        return;
+      case "compact":
+        void store.compact(args.length > 0 ? args : undefined);
+        return;
+      case "autocompact":
+        void store.setAutoCompaction(!(store.state()?.autoCompactionEnabled ?? true));
+        return;
+      case "steering":
+        void store.setSteeringMode(flip(store.state()?.steeringMode));
+        return;
+      case "followup":
+        void store.setFollowUpMode(flip(store.state()?.followUpMode));
+        return;
+    }
+  };
+
   const submit = (text: string) => {
     if (overlay() === "model") {
       chooseModel(pickerModels()[picked()]);
@@ -145,6 +180,13 @@ export function App(props: { port: SessionPort; onQuit?: (() => void) | undefine
     // The editor keeps its text after submit; clear it so the next prompt
     // starts empty and history navigation has a known baseline.
     showInInput("");
+    // A turn that is already running cannot take a prompt: the core rejects one
+    // outright. Typing during a turn means steering it, which is why this
+    // routes rather than erroring the way it used to.
+    if (store.transcript().streaming && !text.startsWith("/") && !text.startsWith("!")) {
+      void store.steer(text);
+      return;
+    }
     const bash = parseBashPrefix(text);
     if (bash) {
       void store.runBash(bash.command, bash.excludeFromContext);
@@ -154,11 +196,7 @@ export function App(props: { port: SessionPort; onQuit?: (() => void) | undefine
     if (route.kind === "client") {
       // A client command never reaches the core, but it is still history: the
       // user typed it, and ↑ has to bring it back like anything else.
-      if (route.name === "model" || route.name === "resume") {
-        openPicker(route.name === "model" ? "model" : "session");
-      } else if (route.name === "new") {
-        void store.newSession();
-      }
+      runClientCommand(route.name, route.args);
       return;
     }
     void store.submit(text);
@@ -251,6 +289,20 @@ export function App(props: { port: SessionPort; onQuit?: (() => void) | undefine
     if (usage) {
       parts.push(`${usage.totalTokens} tok`);
     }
+    if (state?.isCompacting) {
+      parts.push("compacting");
+    }
+    // Only when off: the default is on, and a status line that names every
+    // default says nothing.
+    if (state && !state.autoCompactionEnabled) {
+      parts.push("auto-compact off");
+    }
+    if (state && state.steeringMode !== "all") {
+      parts.push(`steer ${state.steeringMode}`);
+    }
+    if (state && state.followUpMode !== "all") {
+      parts.push(`follow-up ${state.followUpMode}`);
+    }
     return parts.join("  ·  ");
   });
 
@@ -339,6 +391,23 @@ export function App(props: { port: SessionPort; onQuit?: (() => void) | undefine
               )}
             </For>
           </Show>
+        </box>
+      </Show>
+
+      <Show when={store.queue().steering.length + store.queue().followUp.length > 0}>
+        <box style={{ flexDirection: "column", flexShrink: 0 }}>
+          <For
+            each={[
+              ...store.queue().steering.map((text) => ["steer", text] as const),
+              ...store.queue().followUp.map((text) => ["follow-up", text] as const),
+            ]}
+          >
+            {([kind, text]) => (
+              <text fg="#888888">
+                ⇥ {kind}: {queuedPreview(text)}
+              </text>
+            )}
+          </For>
         </box>
       </Show>
 

@@ -43,6 +43,10 @@ other 19 live in `core/` and `cli/` and need real work (see phase C).
 - **First OpenTUI + Solid client slice** (`packages/client`) over a `SessionPort`, with a headless Bun render
   suite, a root-level client smoke, and a separate Bun CI job. See ADR 0005. Scrollback, incremental tool
   output, a working quit path, prompt history, and multi-line paste have since landed.
+- **Compaction and queue UI** ([#26](https://github.com/jakeryderv/rocky/issues/26)). `/compact`,
+  `/autocompact`, `/steering` and `/followup`, the queued messages listed above the prompt, and non-default
+  queue settings named in the status line. Also fixed typing during a turn, which sent a `prompt` the core
+  rejects rather than steering.
 - **Bash passthrough** ([#24](https://github.com/jakeryderv/rocky/issues/24)). `!` and `!!` at the prompt,
   output streaming into the transcript, and ctrl+c cancelling a running command before it aborts a turn.
 - **Session list, resume, and new session** ([#22](https://github.com/jakeryderv/rocky/issues/22)).
@@ -82,8 +86,7 @@ with it.
    client cannot configure a provider. Shell out to `rocky auth` first; a Rocky-owned auth surface in the
    contract is the real answer.
 
-Then, needed but not blocking: compaction and steering/follow-up queue UI over
-commands the contract already has ([#26](https://github.com/jakeryderv/rocky/issues/26)); settings, theme,
+Then, needed but not blocking: settings, theme,
 and keybinding screens ([#27](https://github.com/jakeryderv/rocky/issues/27)); `export_html`, `fork`,
 `clone`, session stats, and the in-session entry/tree navigation `get_entries` and `get_tree` provide
 ([#28](https://github.com/jakeryderv/rocky/issues/28) — moved there from #22, because a fork picker or tree

@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+- **Compaction and the message queues have a UI.** `/compact [what to keep]` summarizes the conversation;
+  `/autocompact`, `/steering` and `/followup` toggle the settings that were reachable only through the
+  contract before. Queued steering and follow-up messages are listed above the prompt, and the status line
+  names compaction and any queue setting that differs from its default — a status line that repeats every
+  default says nothing.
+
+- **Fixed: typing during a turn produced an error instead of steering it.** The client sent every submission
+  as a `prompt`, and the core rejects a prompt while it is already processing. Text typed during a turn is
+  now queued as steering, which is what typing during a turn means; a `/` command or a `!` shell command
+  still runs immediately.
+
 - **Shell commands run from the prompt.** `!cmd` runs a command and shows it to the model; `!!cmd` keeps both
   out of context, the inherited TUI's convention. Output streams into the transcript as it arrives, and
   ctrl+c cancels a running command before it aborts a turn or quits — a running command is the most immediate

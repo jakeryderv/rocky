@@ -23,6 +23,15 @@ export const CLIENT_COMMANDS: readonly CommandEntry[] = [
   { name: "model", description: "Switch the active model", origin: "client" },
   { name: "resume", description: "Resume a previous session", origin: "client" },
   { name: "new", description: "Start a new session", origin: "client" },
+  {
+    name: "compact",
+    description: "Summarize the conversation so far",
+    argumentHint: "[what to keep]",
+    origin: "client",
+  },
+  { name: "autocompact", description: "Toggle automatic compaction", origin: "client" },
+  { name: "steering", description: "Toggle how steering messages are released", origin: "client" },
+  { name: "followup", description: "Toggle how follow-up messages are released", origin: "client" },
 ];
 
 /**
