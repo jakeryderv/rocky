@@ -157,18 +157,42 @@ interface PiMessageLike {
   model?: string;
   usage?: Partial<Usage>;
   stopReason?: unknown;
+  errorMessage?: string;
   toolCallId?: string;
-  output?: string;
   isError?: boolean;
 }
 
-/** Render a tool result payload as the text a client displays. */
+/**
+ * Render a tool result payload as the text a client displays.
+ *
+ * Pi's `ToolResultMessage.content` is a `(TextContent | ImageContent)[]`, so the
+ * common case is an array of blocks, not a string. Stringifying the wrapper here
+ * would put `[{"type":"text","text":"..."}]` on screen.
+ */
 function toResultText(value: unknown): string {
   if (typeof value === "string") {
     return value;
   }
   if (value === undefined || value === null) {
     return "";
+  }
+  if (Array.isArray(value)) {
+    return value
+      .map((item) => {
+        if (typeof item === "string") {
+          return item;
+        }
+        const block = item as PiContentLike;
+        if (block?.type === "text") {
+          return block.text ?? "";
+        }
+        if (block?.type === "image") {
+          return `[image ${block.mimeType ?? "unknown"}]`;
+        }
+        return "";
+      })
+      .filter((text) => text.length > 0)
+      .join("\n");
   }
   try {
     return JSON.stringify(value);
@@ -207,6 +231,7 @@ export function toSessionMessage(message: PiMessageLike): SessionMessage | undef
       model: { provider: message.provider ?? "unknown", id: message.model ?? "unknown" },
       usage: toUsage(message.usage),
       stopReason: toStopReason(message.stopReason),
+      ...(message.errorMessage !== undefined ? { errorMessage: message.errorMessage } : {}),
       timestamp,
     };
   }
@@ -218,7 +243,7 @@ export function toSessionMessage(message: PiMessageLike): SessionMessage | undef
         {
           type: "tool_result",
           toolCallId: message.toolCallId ?? "",
-          content: toResultText(message.output ?? message.content),
+          content: toResultText(message.content),
           ...(message.isError ? { isError: true } : {}),
         },
       ],
@@ -233,6 +258,7 @@ export function toSessionMessage(message: PiMessageLike): SessionMessage | undef
 
 interface PiAssistantMessageEventLike {
   type: string;
+  contentIndex?: number;
   delta?: string;
   toolCall?: { id?: string; name?: string; arguments?: unknown };
 }
@@ -245,21 +271,23 @@ interface PiAssistantMessageEventLike {
  * client never has to reconcile two overlapping notions of "the message so far".
  */
 export function toMessageDelta(event: PiAssistantMessageEventLike): MessageDelta | undefined {
+  const index = event.contentIndex ?? 0;
   if (event.type === "text_delta") {
-    return { type: "text_delta", text: event.delta ?? "" };
+    return { type: "text_delta", index, text: event.delta ?? "" };
   }
   if (event.type === "thinking_delta") {
-    return { type: "thinking_delta", thinking: event.delta ?? "" };
+    return { type: "thinking_delta", index, thinking: event.delta ?? "" };
   }
   if (event.type === "toolcall_delta") {
-    return { type: "tool_call_delta", id: "", name: "", argumentsJson: event.delta ?? "" };
+    return { type: "tool_call_delta", index, argumentsJson: event.delta ?? "" };
   }
   if (event.type === "toolcall_end") {
     return {
-      type: "tool_call_delta",
+      type: "tool_call_end",
+      index,
       id: event.toolCall?.id ?? "",
       name: event.toolCall?.name ?? "",
-      argumentsJson: JSON.stringify(event.toolCall?.arguments ?? {}),
+      arguments: toPlainArguments(event.toolCall?.arguments),
     };
   }
   return undefined;
@@ -301,8 +329,22 @@ export function toSessionEvent(event: PiSessionEventLike): SessionEvent | undefi
       return { type: "turn_start" };
     case "turn_end":
       return { type: "turn_end", stopReason: toStopReason(event.message?.stopReason) };
-    case "message_start":
-      return { type: "message_start", role: "assistant" };
+    case "message_start": {
+      // The harness opens a message for the user prompt and for every tool
+      // result too, not only for the assistant. Reporting them all as
+      // "assistant" makes a client open a phantom assistant bubble each time.
+      const role = event.message?.role;
+      if (role === "user") {
+        return { type: "message_start", role: "user" };
+      }
+      if (role === "toolResult") {
+        return { type: "message_start", role: "tool_result" };
+      }
+      if (role === "assistant") {
+        return { type: "message_start", role: "assistant" };
+      }
+      return undefined;
+    }
     case "message_update": {
       if (!event.assistantMessageEvent) {
         return undefined;
@@ -311,10 +353,14 @@ export function toSessionEvent(event: PiSessionEventLike): SessionEvent | undefi
       if (!delta) {
         return undefined;
       }
+      // A live `AgentSession.subscribe` listener gets the raw event, whose
+      // usage lives on the cumulative message; only the JSON/RPC wire form
+      // hoists it to the top level (json-event.ts). Read both.
+      const usage = event.usage ?? event.message?.usage;
       return {
         type: "message_delta",
         delta,
-        ...(event.usage ? { usage: toUsage(event.usage) } : {}),
+        ...(usage ? { usage: toUsage(usage) } : {}),
       };
     }
     case "message_end": {

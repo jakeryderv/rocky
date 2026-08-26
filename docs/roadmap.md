@@ -24,10 +24,24 @@ priorities change.
   from the harness RPC protocol rather than designed greenfield (ADR 0004). Isolation and JSON /
   `structuredClone` round-trips are enforced by tests.
 
+- **Contract corrections from adversarial review.** Six mapping defects (tool-result rendering, `message_start`
+  roles, missing delta block indices, ambiguous tool-call streaming, frozen usage, dropped error text) and one
+  vacuous exhaustiveness test, all fixed with regression tests derived from upstream shapes. See ADR 0004.
+
 ## Next (in order)
 
 1. **OpenTUI + Solid client on Bun, with the contract** — the first Rocky-owned TUI, consuming only the
    contract, built as a vertical slice so the client's real needs drive what the contract grows (ADR 0004).
+   Runtime facts established 2026-08-25 by probing the real package: OpenTUI 0.5.8 renders **only under Bun**
+   (Node needs >= 26.4 with `--experimental-ffi`; on Node 24 the module imports fine but the native FFI throws
+   at renderer construction, so the failure is at runtime, not at import). Native code ships as per-platform
+   npm `optionalDependencies` with no install scripts, so `npm ci --ignore-scripts` is unaffected. A working
+   app requires `babel-preset-solid` with `generate: "universal"`; the shipped `jsx-runtime` compiles under
+   plain `tsc` but is **not reactive** — signals never propagate — so there is no tsc-only path.
+   `testRender`/`captureCharFrame` give deterministic headless assertions with no model call.
+   Known blockers before building: the client package must be excluded from Biome's `a11y` rules (terminal
+   tags have no ARIA roles), and `state_changed` is declared in the contract but never emitted, so a client
+   must poll `get_state` until that is wired.
    Promote further RPC-protocol surfaces (session fork/clone/switch, bash execution, extension UI, slash
    commands) into the contract as the client consumes them. Keep the inherited `InteractiveMode` reachable
    (e.g. `rocky --classic`) until the new client covers daily use, then delete `modes/interactive` from the

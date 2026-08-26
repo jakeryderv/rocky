@@ -55,6 +55,36 @@ Because the adapter takes a structural interface, harness signature changes surf
 with explicit fallbacks (`toThinkingLevel`, `toStopReason`), so an upstream enum addition degrades to a safe
 default instead of emitting a value no client can interpret.
 
+## Corrections from the first adversarial review (2026-08-25)
+
+An adversarial review of the first cut against a planned OpenTUI client found six defects that would each have
+produced visibly wrong output, and one worthless test. All are fixed; each has a regression test built from the
+shape the harness actually emits rather than an invented one:
+
+- **Tool results were unreadable.** `ToolResultMessage` has no `output` field and its `content` is a
+  `(TextContent | ImageContent)[]`, so the mapper stringified the wrapper and a client would render
+  `[{"type":"text","text":"…"}]`. Results are now flattened to text, with image blocks described rather than
+  dumped. The original test used `result: "done"` — a shape the harness never emits — which hid this.
+- **Phantom assistant bubbles.** `message_start` was hardcoded to `role: "assistant"`, but the harness opens a
+  message for the user prompt and for every tool result too. The role now comes from the event, and the
+  contract's `message_start` admits `"user" | "assistant" | "tool_result"`.
+- **Deltas could not be attributed to a content block.** Upstream carries `contentIndex` on every streaming
+  event and the harness's own wire form preserves it; Rocky was the only layer dropping it. `MessageDelta`
+  now carries `index`, so interleaved text/thinking/tool-call blocks reconstruct correctly.
+- **Tool-call streaming was ambiguous.** Fragments and the terminal event both mapped to `tool_call_delta`, so
+  a client could not tell "concatenate this" from "replace with this". Split into `tool_call_delta`
+  (a fragment) and `tool_call_end` (authoritative).
+- **A permanently frozen token counter.** Usage was read only from `event.usage`, which exists on the JSON/RPC
+  wire form but not on the live `subscribe` path, where it sits on the cumulative message. Both are read now.
+- **Failed turns gave no reason.** `AssistantMessage.errorMessage` was dropped; it is now carried.
+- **The exhaustiveness test was vacuous.** Its union scan stopped at the first semicolon, but variants are
+  written `{ type: "turn_end"; stopReason: StopReason }` — so it checked 2 of 16 event types and passed. Fixed
+  to terminate at the declaration's end, extended to the `MessageDelta` union and the `message_start` roles,
+  and given a lower-bound assertion so a future truncation fails instead of passing quietly.
+
+The general lesson, recorded because it will recur: a mapping layer tested only against fixtures the mapper's
+own author invented will agree with itself. The regression tests now derive from the upstream `.d.ts` shapes.
+
 Verified against a live session on both runtimes: a real turn driven through `PiAgentSessionAdapter` produces
 identical contract events under Node 24 and Bun 1.4.0, with every emitted value surviving JSON and
 `structuredClone` round-trips.

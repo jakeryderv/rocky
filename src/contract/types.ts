@@ -127,6 +127,8 @@ export interface AssistantMessage {
   model: ModelRef;
   usage: Usage;
   stopReason: StopReason;
+  /** Provider-reported failure text, when the turn ended in an error. */
+  errorMessage?: string | undefined;
   timestamp: number;
 }
 
@@ -225,16 +227,24 @@ export type CommandResult =
  * `message_end`. Cumulative snapshots are deliberately not sent on every delta.
  */
 export type MessageDelta =
-  | { type: "text_delta"; text: string }
-  | { type: "thinking_delta"; thinking: string }
-  | { type: "tool_call_delta"; id: string; name: string; argumentsJson: string };
+  /**
+   * `index` is the content-block position the delta belongs to. Without it a
+   * client cannot tell an append to the current block from the start of an
+   * adjacent block of the same kind, and interleaved blocks reconstruct wrong.
+   */
+  | { type: "text_delta"; index: number; text: string }
+  | { type: "thinking_delta"; index: number; thinking: string }
+  /** An argument fragment to concatenate. Not valid JSON on its own. */
+  | { type: "tool_call_delta"; index: number; argumentsJson: string }
+  /** The authoritative tool call. Replaces whatever the fragments accumulated. */
+  | { type: "tool_call_end"; index: number; id: string; name: string; arguments: Record<string, unknown> };
 
 export type SessionEvent =
   // Turn lifecycle
   | { type: "turn_start" }
   | { type: "turn_end"; stopReason: StopReason }
   // Message streaming
-  | { type: "message_start"; role: "assistant" }
+  | { type: "message_start"; role: "user" | "assistant" | "tool_result" }
   | { type: "message_delta"; delta: MessageDelta; usage?: Usage }
   | { type: "message_end"; message: SessionMessage }
   // Tools

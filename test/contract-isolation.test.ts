@@ -5,6 +5,7 @@ import { describe, expect, it } from "vitest";
 import {
   FIXTURE_COMMAND_RESULTS,
   FIXTURE_COMMANDS,
+  FIXTURE_DELTAS,
   FIXTURE_EVENTS,
   FIXTURE_STATE,
 } from "../src/contract/fixtures.js";
@@ -59,6 +60,7 @@ describe("contract serialization", () => {
     { label: "state", value: FIXTURE_STATE },
     ...FIXTURE_COMMANDS.map((command) => ({ label: `command:${command.type}`, value: command })),
     ...FIXTURE_EVENTS.map((event) => ({ label: `event:${event.type}`, value: event })),
+    ...FIXTURE_DELTAS.map((delta) => ({ label: `delta:${delta.type}`, value: delta })),
     ...FIXTURE_COMMAND_RESULTS.map((result) => ({
       label: `result:${result.command}:${result.ok}`,
       value: result,
@@ -73,15 +75,45 @@ describe("contract serialization", () => {
     expect(structuredClone(value)).toEqual(value);
   });
 
+  /**
+   * Read one exported union declaration's body.
+   *
+   * The union must terminate at the semicolon that ends the *declaration*, not
+   * at the first semicolon inside a variant — variants are written
+   * `{ type: "turn_end"; stopReason: StopReason }`, so stopping at the first
+   * `;` silently truncates the scan to the first variant and makes the
+   * exhaustiveness check below pass vacuously.
+   */
+  function declaredTypeTags(declaration: string): Set<string> {
+    const declared = readFileSync(join(contractDir, "types.ts"), "utf8");
+    const start = declared.indexOf(declaration);
+    expect(start).toBeGreaterThanOrEqual(0);
+    const union = declared.slice(start);
+    const end = union.search(/;\s*(\r?\n|$)/);
+    expect(end).toBeGreaterThan(0);
+    return new Set([...union.slice(0, end).matchAll(/type:\s*"([a-z_]+)"/g)].map((m) => m[1] as string));
+  }
+
   it("covers every event type in the union", () => {
     const covered = new Set(FIXTURE_EVENTS.map((event) => event.type));
-    // Keep fixtures exhaustive: a new event type without a fixture ships untested.
-    const declared = readFileSync(join(contractDir, "types.ts"), "utf8");
-    const union = declared.slice(declared.indexOf("export type SessionEvent ="));
-    const declaredTypes = new Set(
-      [...union.slice(0, union.indexOf(";")).matchAll(/type:\s*"([a-z_]+)"/g)].map((m) => m[1] as string),
-    );
+    const declaredTypes = declaredTypeTags("export type SessionEvent =");
+    // Guard the guard: if the scan silently truncates again, this catches it.
+    expect(declaredTypes.size).toBeGreaterThan(10);
     expect([...declaredTypes].filter((type) => !covered.has(type as never))).toEqual([]);
+  });
+
+  it("covers every message-delta variant", () => {
+    const covered = new Set(FIXTURE_DELTAS.map((delta) => delta.type));
+    const declaredTypes = declaredTypeTags("export type MessageDelta =");
+    expect(declaredTypes.size).toBeGreaterThan(3);
+    expect([...declaredTypes].filter((type) => !covered.has(type as never))).toEqual([]);
+  });
+
+  it("covers every message_start role", () => {
+    const roles = new Set(
+      FIXTURE_EVENTS.filter((event) => event.type === "message_start").map((event) => event.role),
+    );
+    expect([...roles].sort()).toEqual(["assistant", "tool_result", "user"]);
   });
 
   it("keeps every outbound value tagged with a discriminating type", () => {

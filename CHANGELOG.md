@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+- **Fix six contract-mapping defects found by adversarial review**, each of which would have rendered visibly
+  wrong output in a client: tool results were stringified as `[{"type":"text",…}]` instead of flattened;
+  `message_start` reported every message as `assistant`, opening phantom bubbles for user prompts and tool
+  results; `MessageDelta` dropped the upstream `contentIndex`, making interleaved blocks unreconstructable;
+  tool-call fragments and terminal events shared one variant; streaming usage was read from a field that only
+  exists on the RPC wire form, freezing the token counter on the live path; and provider error text was
+  dropped. Also fixes an exhaustiveness test whose union scan stopped at the first semicolon and so checked
+  2 of 16 event types while passing. See ADR 0004.
+
 - **Fix: every model turn crashed with `EEXIST`.** Rocky's private-storage extension pre-created the session
   file, so the harness's exclusive-create flush failed on the first assistant message. Session privacy is now
   enforced by the harness at the point of creation (`0600` files, `0700` directories, re-applied after the

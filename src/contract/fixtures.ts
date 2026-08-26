@@ -3,7 +3,15 @@
  * clients as rendering fixtures. Kept in the contract so it stays free of
  * harness types.
  */
-import type { CommandResult, ModelRef, SessionCommand, SessionEvent, SessionState, Usage } from "./types.js";
+import type {
+  CommandResult,
+  MessageDelta,
+  ModelRef,
+  SessionCommand,
+  SessionEvent,
+  SessionState,
+  Usage,
+} from "./types.js";
 
 export const FIXTURE_MODEL: ModelRef = {
   provider: "openai-codex",
@@ -60,12 +68,18 @@ export const FIXTURE_COMMANDS: SessionCommand[] = [
 
 export const FIXTURE_EVENTS: SessionEvent[] = [
   { type: "turn_start" },
+  { type: "message_start", role: "user" },
   { type: "message_start", role: "assistant" },
-  { type: "message_delta", delta: { type: "thinking_delta", thinking: "considering" } },
-  { type: "message_delta", delta: { type: "text_delta", text: "Hello" }, usage: FIXTURE_USAGE },
+  { type: "message_start", role: "tool_result" },
+  { type: "message_delta", delta: { type: "thinking_delta", index: 0, thinking: "considering" } },
+  { type: "message_delta", delta: { type: "text_delta", index: 1, text: "Hello" }, usage: FIXTURE_USAGE },
   {
     type: "message_delta",
-    delta: { type: "tool_call_delta", id: "call_1", name: "read", argumentsJson: '{"path":' },
+    delta: { type: "tool_call_delta", index: 2, argumentsJson: '{"path":' },
+  },
+  {
+    type: "message_delta",
+    delta: { type: "tool_call_end", index: 2, id: "call_1", name: "read", arguments: { path: "README.md" } },
   },
   { type: "tool_start", toolCallId: "call_1", name: "read", arguments: { path: "README.md" } },
   {
@@ -97,6 +111,18 @@ export const FIXTURE_EVENTS: SessionEvent[] = [
   { type: "state_changed", state: FIXTURE_STATE },
   { type: "session_name_changed", name: "renamed" },
   { type: "error", message: "provider rejected the request" },
+  {
+    type: "message_end",
+    message: {
+      role: "assistant",
+      content: [],
+      model: FIXTURE_MODEL,
+      usage: FIXTURE_USAGE,
+      stopReason: "error",
+      errorMessage: "provider returned 529 overloaded",
+      timestamp: 1_787_707_000_500,
+    },
+  },
   { type: "settled" },
 ];
 
@@ -106,4 +132,12 @@ export const FIXTURE_COMMAND_RESULTS: CommandResult[] = [
   { type: "command_result", id: "cX", command: "get_available_models", ok: true, models: [FIXTURE_MODEL] },
   { type: "command_result", id: "c4", command: "abort", ok: true },
   { type: "command_result", id: "c9", command: "compact", ok: false, error: "nothing to compact" },
+];
+
+/** Every `MessageDelta` variant, so the delta union is covered exhaustively too. */
+export const FIXTURE_DELTAS: MessageDelta[] = [
+  { type: "text_delta", index: 0, text: "Hello" },
+  { type: "thinking_delta", index: 1, thinking: "considering" },
+  { type: "tool_call_delta", index: 2, argumentsJson: '{"path":' },
+  { type: "tool_call_end", index: 2, id: "call_1", name: "read", arguments: { path: "README.md" } },
 ];

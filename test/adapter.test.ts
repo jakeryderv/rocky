@@ -100,12 +100,7 @@ describe("mapping harness values to the contract", () => {
     expect(block?.arguments).toEqual({ keep: 1 });
   });
 
-  it("maps streaming deltas and ignores boundary events", () => {
-    expect(toMessageDelta({ type: "text_delta", delta: "abc" })).toEqual({ type: "text_delta", text: "abc" });
-    expect(toMessageDelta({ type: "thinking_delta", delta: "why" })).toEqual({
-      type: "thinking_delta",
-      thinking: "why",
-    });
+  it("ignores streaming boundary events", () => {
     expect(toMessageDelta({ type: "text_start" })).toBeUndefined();
     expect(toMessageDelta({ type: "done" })).toBeUndefined();
   });
@@ -121,6 +116,116 @@ describe("mapping harness values to the contract", () => {
       toolCallId: "t1",
       result: { type: "tool_result", toolCallId: "t1", content: "done", isError: true },
     });
+  });
+
+  // pi's ToolResultMessage has no `output` field and its `content` is a block
+  // array, so a tool result must be flattened, not stringified. The previous
+  // test used `result: "done"` — a shape the harness never emits — which hid this.
+  it("flattens a real tool-result message into display text", () => {
+    expect(
+      toSessionMessage({
+        role: "toolResult",
+        toolCallId: "t1",
+        content: [
+          { type: "text", text: "# Rocky" },
+          { type: "text", text: "second line" },
+        ],
+        isError: false,
+        timestamp: 7,
+      }),
+    ).toEqual({
+      role: "tool_result",
+      content: [{ type: "tool_result", toolCallId: "t1", content: "# Rocky\nsecond line" }],
+      timestamp: 7,
+    });
+  });
+
+  it("describes an image block in a tool result rather than dumping its bytes", () => {
+    expect(
+      toSessionMessage({
+        role: "toolResult",
+        toolCallId: "t2",
+        content: [{ type: "image", data: "AAAA", mimeType: "image/png" }],
+        isError: true,
+        timestamp: 8,
+      }),
+    ).toEqual({
+      role: "tool_result",
+      content: [{ type: "tool_result", toolCallId: "t2", content: "[image image/png]", isError: true }],
+      timestamp: 8,
+    });
+  });
+
+  it("carries the provider failure reason on a failed turn", () => {
+    const message = toSessionMessage({
+      role: "assistant",
+      content: [],
+      stopReason: "error",
+      errorMessage: "529 overloaded",
+      timestamp: 9,
+    });
+    expect((message as { errorMessage?: string }).errorMessage).toBe("529 overloaded");
+  });
+
+  it("attributes deltas to their content block", () => {
+    expect(toMessageDelta({ type: "text_delta", contentIndex: 3, delta: "abc" })).toEqual({
+      type: "text_delta",
+      index: 3,
+      text: "abc",
+    });
+    expect(toMessageDelta({ type: "thinking_delta", contentIndex: 1, delta: "why" })).toEqual({
+      type: "thinking_delta",
+      index: 1,
+      thinking: "why",
+    });
+  });
+
+  it("separates a tool-call fragment from the authoritative terminal event", () => {
+    expect(toMessageDelta({ type: "toolcall_delta", contentIndex: 2, delta: '{"path":' })).toEqual({
+      type: "tool_call_delta",
+      index: 2,
+      argumentsJson: '{"path":',
+    });
+    expect(
+      toMessageDelta({
+        type: "toolcall_end",
+        contentIndex: 2,
+        toolCall: { id: "call_1", name: "read", arguments: { path: "a.ts" } },
+      }),
+    ).toEqual({ type: "tool_call_end", index: 2, id: "call_1", name: "read", arguments: { path: "a.ts" } });
+  });
+
+  it("reports message_start for the role that actually started", () => {
+    expect(toSessionEvent({ type: "message_start", message: { role: "user", content: "hi" } })).toEqual({
+      type: "message_start",
+      role: "user",
+    });
+    expect(toSessionEvent({ type: "message_start", message: { role: "assistant", content: [] } })).toEqual({
+      type: "message_start",
+      role: "assistant",
+    });
+    expect(toSessionEvent({ type: "message_start", message: { role: "toolResult", content: [] } })).toEqual({
+      type: "message_start",
+      role: "tool_result",
+    });
+  });
+
+  // On the live subscribe path usage lives on the cumulative message; only the
+  // JSON/RPC wire form hoists it to the top level.
+  it("finds usage on the live path as well as the wire path", () => {
+    const live = toSessionEvent({
+      type: "message_update",
+      assistantMessageEvent: { type: "text_delta", contentIndex: 0, delta: "x" },
+      message: { role: "assistant", content: [], usage: { input: 11, totalTokens: 11 } },
+    });
+    expect((live as { usage?: { input: number } }).usage?.input).toBe(11);
+
+    const wire = toSessionEvent({
+      type: "message_update",
+      assistantMessageEvent: { type: "text_delta", contentIndex: 0, delta: "x" },
+      usage: { input: 22, totalTokens: 22 },
+    });
+    expect((wire as { usage?: { input: number } }).usage?.input).toBe(22);
   });
 
   it("drops harness events with no contract representation", () => {
@@ -201,13 +306,16 @@ describe("PiAgentSessionAdapter", () => {
     adapter.subscribe((event) => seen.push(event));
 
     emit({ type: "turn_start" });
-    emit({ type: "message_update", assistantMessageEvent: { type: "text_delta", delta: "hi" } });
+    emit({
+      type: "message_update",
+      assistantMessageEvent: { type: "text_delta", contentIndex: 0, delta: "hi" },
+    });
     emit({ type: "bash_execution_update", delta: "ls" });
     emit({ type: "agent_settled" });
 
     expect(seen).toEqual([
       { type: "turn_start" },
-      { type: "message_delta", delta: { type: "text_delta", text: "hi" } },
+      { type: "message_delta", delta: { type: "text_delta", index: 0, text: "hi" } },
       { type: "settled" },
     ]);
   });
