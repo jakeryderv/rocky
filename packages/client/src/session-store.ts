@@ -7,8 +7,10 @@
  */
 
 import type {
+  AuthMethod,
   ForkPoint,
   ModelRef,
+  ProviderAuth,
   QueueMode,
   SessionCommand,
   SessionPort,
@@ -20,6 +22,7 @@ import type {
   ThinkingLevel,
 } from "@rocky/contract";
 import { createSignal } from "solid-js";
+import { type AuthState, applyAuthEvent, beginAuth, idleAuth } from "./model/auth.js";
 import {
   applyEvent,
   emptyTranscript,
@@ -70,6 +73,15 @@ export interface SessionStore {
   loadThemes: () => Promise<void>;
   setTheme: (name: string) => Promise<void>;
   setThinkingLevel: (level: ThinkingLevel) => Promise<void>;
+  /** Providers and whether they are usable. Loaded on demand. */
+  providers: () => readonly ProviderAuth[];
+  loadProviders: () => Promise<void>;
+  /** The login in progress, if any. */
+  auth: () => AuthState;
+  login: (provider: string, method: AuthMethod) => Promise<void>;
+  logout: (provider: string) => Promise<void>;
+  answerAuth: (requestId: string, value: string) => Promise<void>;
+  cancelAuth: () => Promise<void>;
   submit: (text: string) => Promise<void>;
   abort: () => Promise<void>;
   dispose: () => void;
@@ -90,6 +102,8 @@ export function createSessionStore(port: SessionPort): SessionStore {
   const [notice, setNotice] = createSignal<string | undefined>(undefined);
   const [theme, setTheme] = createSignal<ThemeSnapshot | undefined>(undefined);
   const [themeNames, setThemeNames] = createSignal<readonly string[]>([]);
+  const [providers, setProviders] = createSignal<readonly ProviderAuth[]>([]);
+  const [auth, setAuth] = createSignal<AuthState>(idleAuth());
 
   // State arrives as a push. The one `get_state` below is the cold-start
   // snapshot only: without it a client that connects mid-session would render
@@ -125,6 +139,19 @@ export function createSessionStore(port: SessionPort): SessionStore {
     setTranscript((current) => applyEvent(current, event));
     if (event.type === "state_changed") {
       setState(event.state);
+    }
+    if (
+      event.type === "auth_request" ||
+      event.type === "auth_request_cancelled" ||
+      event.type === "auth_notice" ||
+      event.type === "auth_end"
+    ) {
+      setAuth((current) => applyAuthEvent(current, event));
+      if (event.type === "auth_end" && event.ok) {
+        // The catalog changes the moment a provider becomes usable.
+        void loadProviders();
+        void loadModels();
+      }
     }
     if (event.type === "theme_changed") {
       setTheme(event.theme);
@@ -186,6 +213,15 @@ export function createSessionStore(port: SessionPort): SessionStore {
     const result = await port.execute({ type: "get_fork_points" });
     if (result.ok && result.command === "get_fork_points") {
       setForkPoints(result.points);
+    } else if (!result.ok) {
+      setTranscript((current) => ({ ...current, error: result.error }));
+    }
+  };
+
+  const loadProviders = async () => {
+    const result = await port.execute({ type: "get_providers" });
+    if (result.ok && result.command === "get_providers") {
+      setProviders(result.providers);
     } else if (!result.ok) {
       setTranscript((current) => ({ ...current, error: result.error }));
     }
@@ -269,6 +305,31 @@ export function createSessionStore(port: SessionPort): SessionStore {
     },
     setTheme: (name: string) => send({ type: "set_theme", name }),
     setThinkingLevel: (level: ThinkingLevel) => send({ type: "set_thinking_level", level }),
+    providers,
+    loadProviders,
+    auth,
+    // Deliberately not awaited into the caller's flow: the command resolves
+    // only when the whole login finishes, and the UI has to keep rendering the
+    // prompts it asks for in the meantime.
+    login: async (provider: string, method: AuthMethod) => {
+      setAuth(beginAuth(provider));
+      const result = await port.execute({ type: "login", provider, method });
+      if (!result.ok) {
+        setAuth((current) => ({ ...current, active: false, error: result.error }));
+      }
+    },
+    logout: async (provider: string) => {
+      await send({ type: "logout", provider });
+      await loadProviders();
+    },
+    answerAuth: (requestId: string, value: string) => send({ type: "auth_reply", requestId, value }),
+    cancelAuth: async () => {
+      const request = auth().request;
+      if (request) {
+        await send({ type: "auth_reply", requestId: request.requestId, cancelled: true });
+      }
+      setAuth(idleAuth());
+    },
     runBash: (command: string, excludeFromContext: boolean) =>
       send({ type: "bash", command, ...(excludeFromContext ? { excludeFromContext: true } : {}) }),
     abortBash: () => send({ type: "abort_bash" }),

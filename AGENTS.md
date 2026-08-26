@@ -77,8 +77,14 @@ so work started there has to be moved anyway. Branch first.
 ## When to fan out, and when not to
 
 This repo is small and centralized, so parallel *editing* mostly produces merge conflicts rather than speed.
-`packages/client` is three files; issues #19, #21, #23, #26 and #27 all edit `App.tsx`, and #24, #25 and #28
-all edit `src/contract/types.ts`. Run those sequentially.
+`packages/client` has grown to about 2,500 lines across `App.tsx`, `session-store.ts` and eleven pure
+modules under `src/model/`, but the shape of the problem has not changed: almost every client feature adds a
+branch to `App.tsx`'s submit routing and key handling, and almost every contract addition edits
+`src/contract/types.ts`, `src/adapter/`, and the fixtures together. Run client work sequentially.
+
+The pattern that did work across phase A: put the decision logic in a pure module under
+`packages/client/src/model/` and test it in the Node suite, leaving `App.tsx` as wiring. The rendered-frame
+tests then only have to prove the wiring, which is what keeps them few and fast.
 
 Fan out on investigation and review instead:
 
@@ -90,6 +96,11 @@ Fan out on investigation and review instead:
   not.
 - **Worktree isolation** only for genuinely disjoint files — for example a debt issue (#29, #30) alongside
   client work.
+
+One thing worth doing by hand, not by test: **run the real client host offline before shipping a change to
+it.** Neither gate constructs a session — `npm run verify` covers the CLI, and the client smoke uses a fake
+port — so `src/client-host/` changes are unverified by CI. Building a port against a scratch directory with
+an isolated `HOME` and `ROCKY_OFFLINE=1` needs no provider and catches what the suites structurally cannot.
 
 Use context7 for OpenTUI (`0.5.8`) and Solid (`1.9.12`) APIs rather than recalling them. Both are fast-moving
 and pinned exactly; guessing an API here costs more than the lookup.

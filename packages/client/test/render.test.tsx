@@ -126,6 +126,25 @@ function fakePort() {
           ],
         };
       }
+      if (command.type === "get_providers") {
+        return {
+          type: "command_result",
+          command: "get_providers",
+          ok: true,
+          providers: [
+            {
+              id: "anthropic",
+              name: "Anthropic",
+              methods: ["oauth", "api_key"],
+              authenticated: true,
+              source: "stored",
+              subscription: true,
+            },
+            { id: "openai-codex", name: "OpenAI Codex", methods: ["oauth"], authenticated: false },
+            { id: "groq", name: "Groq", methods: [], authenticated: true, source: "environment" },
+          ],
+        };
+      }
       if (command.type === "get_theme") {
         return {
           type: "command_result",
@@ -1153,5 +1172,164 @@ test("/thinking sets the reasoning level", async () => {
 
   expect(sent.filter((command) => command.type === "set_thinking_level")).toEqual([
     { type: "set_thinking_level", level: "high" },
+  ]);
+});
+
+test("/login lists a row per way in, and omits providers with none", async () => {
+  const { port } = fakePort();
+  const t = await testRender(() => <App port={port} />, { width: 70, height: 20 });
+  await t.renderOnce();
+
+  await t.mockInput.typeText("/login");
+  t.mockInput.pressEnter();
+  await t.renderOnce();
+  await t.renderOnce();
+
+  const frame = t.captureCharFrame();
+  expect(frame).toContain("Anthropic — subscription");
+  expect(frame).toContain("Anthropic — api key");
+  expect(frame).toContain("OpenAI Codex");
+  // Credentials from the environment: authenticated, but nothing to log into.
+  expect(frame).not.toContain("Groq");
+});
+
+test("choosing a provider starts the login", async () => {
+  const { port, sent } = fakePort();
+  const t = await testRender(() => <App port={port} />, { width: 70, height: 20 });
+  await t.renderOnce();
+
+  await t.mockInput.typeText("/login");
+  t.mockInput.pressEnter();
+  await t.renderOnce();
+  await t.renderOnce();
+  t.mockInput.pressEnter();
+  await t.renderOnce();
+
+  expect(sent.filter((command) => command.type === "login")).toEqual([
+    { type: "login", provider: "anthropic", method: "oauth" },
+  ]);
+});
+
+// The core asks; the client answers. A device code has to stay on screen while
+// the flow reports progress after it.
+test("shows what a login is waiting for and answers it", async () => {
+  const { port, sent, emit } = fakePort();
+  const t = await testRender(() => <App port={port} />, { width: 70, height: 20 });
+  await t.renderOnce();
+
+  emit({
+    type: "auth_notice",
+    kind: "device_code",
+    userCode: "WXYZ-1234",
+    verificationUri: "https://example.test/device",
+  });
+  emit({
+    type: "auth_request",
+    requestId: "auth-1",
+    kind: "secret",
+    message: "Enter Anthropic API key",
+  });
+  await t.renderOnce();
+
+  const frame = t.captureCharFrame();
+  expect(frame).toContain("WXYZ-1234");
+  expect(frame).toContain("Enter Anthropic API key");
+
+  await t.mockInput.typeText("sk-test");
+  t.mockInput.pressEnter();
+  await t.renderOnce();
+
+  expect(sent.filter((command) => command.type === "auth_reply")).toEqual([
+    { type: "auth_reply", requestId: "auth-1", value: "sk-test" },
+  ]);
+  // Answering a login is never a prompt to the model.
+  expect(sent.filter((command) => command.type === "prompt")).toEqual([]);
+});
+
+test("answers a select prompt from the highlighted row", async () => {
+  const { port, sent, emit } = fakePort();
+  const t = await testRender(() => <App port={port} />, { width: 70, height: 20 });
+  await t.renderOnce();
+
+  emit({
+    type: "auth_request",
+    requestId: "auth-2",
+    kind: "select",
+    message: "How would you like to sign in?",
+    options: [
+      { id: "browser", label: "Browser login (default)" },
+      { id: "device_code", label: "Device code login (headless)" },
+    ],
+  });
+  await t.renderOnce();
+  expect(t.captureCharFrame()).toContain("Device code login");
+
+  t.mockInput.pressArrow("down");
+  await t.renderOnce();
+  t.mockInput.pressEnter();
+  await t.renderOnce();
+
+  expect(sent.filter((command) => command.type === "auth_reply")).toEqual([
+    { type: "auth_reply", requestId: "auth-2", value: "device_code" },
+  ]);
+});
+
+// A prompt the flow withdrew must disappear on its own — several OAuth flows
+// race a pasted redirect against a local callback server.
+test("clears a withdrawn prompt", async () => {
+  const { port, emit } = fakePort();
+  const t = await testRender(() => <App port={port} />, { width: 70, height: 20 });
+  await t.renderOnce();
+
+  emit({ type: "auth_request", requestId: "auth-3", kind: "manual_code", message: "Paste the redirect" });
+  await t.renderOnce();
+  expect(t.captureCharFrame()).toContain("Paste the redirect");
+
+  emit({ type: "auth_request_cancelled", requestId: "auth-3" });
+  await t.renderOnce();
+  expect(t.captureCharFrame()).not.toContain("Paste the redirect");
+});
+
+// A login holds the session until it is answered.
+test("ctrl+c cancels a login before anything else", async () => {
+  const { port, sent, emit } = fakePort();
+  let quits = 0;
+  const t = await testRender(() => <App port={port} onQuit={() => (quits += 1)} />, {
+    width: 70,
+    height: 20,
+  });
+  await t.renderOnce();
+
+  emit({ type: "auth_request", requestId: "auth-4", kind: "text", message: "Enterprise URL" });
+  await t.renderOnce();
+
+  t.mockInput.pressCtrlC();
+  await t.renderOnce();
+
+  expect(sent.filter((command) => command.type === "auth_reply")).toEqual([
+    { type: "auth_reply", requestId: "auth-4", cancelled: true },
+  ]);
+  expect(quits).toBe(0);
+});
+
+test("/logout offers only credentials the core can remove", async () => {
+  const { port, sent } = fakePort();
+  const t = await testRender(() => <App port={port} />, { width: 70, height: 20 });
+  await t.renderOnce();
+
+  await t.mockInput.typeText("/logout");
+  t.mockInput.pressEnter();
+  await t.renderOnce();
+  await t.renderOnce();
+
+  const frame = t.captureCharFrame();
+  expect(frame).toContain("Anthropic");
+  // An environment variable is not the client's to unset.
+  expect(frame).not.toContain("Groq");
+
+  t.mockInput.pressEnter();
+  await t.renderOnce();
+  expect(sent.filter((command) => command.type === "logout")).toEqual([
+    { type: "logout", provider: "anthropic" },
   ]);
 });

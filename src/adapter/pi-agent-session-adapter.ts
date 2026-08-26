@@ -7,10 +7,12 @@
  * contract shapes already survive serialization.
  */
 import type {
+  AuthSelectOption,
   BashResult,
   CommandResult,
   ForkPoint,
   ModelRef,
+  ProviderAuth,
   SessionCommand,
   SessionEvent,
   SessionMessage,
@@ -22,7 +24,10 @@ import type {
 import {
   flattenSessionTree,
   indexSessionsByPath,
+  toAuthNotice,
+  toAuthRequestKind,
   toModelRef,
+  toProviderAuth,
   toSessionEvent,
   toSessionMessage,
   toSessionStats,
@@ -108,6 +113,35 @@ export type SlashCommandCatalog = () =>
   | undefined;
 
 /**
+ * What the core needs from a client mid-login, expressed the way the harness's
+ * own auth flows expect it.
+ */
+export interface AuthInteraction {
+  signal?: AbortSignal;
+  prompt(request: {
+    type: string;
+    message: string;
+    placeholder?: string;
+    options?: readonly { id: string; label: string; description?: string }[];
+    signal?: AbortSignal;
+  }): Promise<string>;
+  notify(event: Record<string, unknown>): void;
+}
+
+/**
+ * Listing providers and logging into them.
+ *
+ * Supplied by the host: authentication lives on the model runtime, not on the
+ * session, and the harness's own login is already headless — it drives
+ * everything through the `prompt`/`notify` callbacks this adapter provides.
+ */
+export interface AuthDirectory {
+  list(): readonly Record<string, unknown>[];
+  login(provider: string, method: string, interaction: AuthInteraction): Promise<void>;
+  logout(provider: string): Promise<void>;
+}
+
+/**
  * Reading and setting the colour theme.
  *
  * Supplied by the host because themes are a core setting shared with the CLI,
@@ -145,6 +179,7 @@ export interface PiAgentSessionAdapterOptions {
   listCommands?: SlashCommandCatalog;
   sessions?: SessionLifecycle;
   themes?: ThemeCatalog;
+  auth?: AuthDirectory;
 }
 
 export class PiAgentSessionAdapter {
@@ -162,6 +197,15 @@ export class PiAgentSessionAdapter {
    * is what keeps a streaming turn from pushing an identical snapshot per delta.
    */
   private lastStateJson: string | undefined;
+  /**
+   * Auth prompts still waiting for a client to answer.
+   *
+   * Keyed by request id so a reply reaches the right one: a single OAuth login
+   * can have two open at once, because some flows offer a pasted redirect while
+   * a local callback server races it.
+   */
+  private readonly authRequests = new Map<string, (value: { value?: string; cancelled?: boolean }) => void>();
+  private authRequestCounter = 0;
 
   constructor(session: AgentSessionLike, options: PiAgentSessionAdapterOptions) {
     this.session = session;
@@ -225,6 +269,51 @@ export class PiAgentSessionAdapter {
   private theme(): ThemeSnapshot {
     const themes = this.options.themes;
     return { name: themes?.active() ?? "", colors: { ...(themes?.resolve() ?? {}) } };
+  }
+
+  /**
+   * Turn one core-side prompt into an event and a promise.
+   *
+   * The promise settles when a matching `auth_reply` arrives, or when the flow
+   * withdraws the request through its own abort signal — in which case the
+   * client is told, so a prompt it is showing can disappear.
+   */
+  private askForAuth(request: Parameters<AuthInteraction["prompt"]>[0]): Promise<string> {
+    this.authRequestCounter += 1;
+    const requestId = `auth-${this.authRequestCounter}`;
+    return new Promise<string>((resolve, reject) => {
+      const settle = (outcome: { value?: string; cancelled?: boolean }) => {
+        if (!this.authRequests.delete(requestId)) {
+          return;
+        }
+        if (outcome.cancelled || outcome.value === undefined) {
+          reject(new Error("Login cancelled"));
+        } else {
+          resolve(outcome.value);
+        }
+      };
+      this.authRequests.set(requestId, settle);
+      request.signal?.addEventListener(
+        "abort",
+        () => {
+          if (this.authRequests.has(requestId)) {
+            this.authRequests.delete(requestId);
+            this.emit({ type: "auth_request_cancelled", requestId });
+            reject(new Error("Prompt withdrawn"));
+          }
+        },
+        { once: true },
+      );
+      const options = request.options?.map((option) => ({ ...option }) as AuthSelectOption);
+      this.emit({
+        type: "auth_request",
+        requestId,
+        kind: toAuthRequestKind(request.type),
+        message: request.message,
+        ...(request.placeholder !== undefined ? { placeholder: request.placeholder } : {}),
+        ...(options !== undefined ? { options } : {}),
+      });
+    });
   }
 
   /** One shape for "this host cannot do that", so a client has one error path. */
@@ -541,6 +630,71 @@ export class PiAgentSessionAdapter {
             entries,
             ...(leafId !== undefined ? { leafId } : {}),
           };
+        }
+        case "get_providers": {
+          const auth = this.options.auth;
+          if (!auth) {
+            return this.unsupported(id, "get_providers", "list providers");
+          }
+          const providers: ProviderAuth[] = [];
+          for (const provider of auth.list()) {
+            const mapped = toProviderAuth(provider as never);
+            if (mapped) {
+              providers.push(mapped);
+            }
+          }
+          return { type: "command_result", id, command: "get_providers", ok: true, providers };
+        }
+        case "login": {
+          const auth = this.options.auth;
+          if (!auth) {
+            return this.unsupported(id, "login", "log in");
+          }
+          try {
+            await auth.login(command.provider, command.method, {
+              prompt: (request) => this.askForAuth(request),
+              notify: (event) => {
+                const notice = toAuthNotice(event as never);
+                if (notice) {
+                  this.emit(notice);
+                }
+              },
+            });
+            this.emit({ type: "auth_end", provider: command.provider, ok: true });
+            return { type: "command_result", id, command: "login", ok: true };
+          } catch (error) {
+            const message = error instanceof Error ? error.message : String(error);
+            // Announced as well as returned: another client watching the
+            // session needs to stop showing the login it was rendering.
+            this.emit({ type: "auth_end", provider: command.provider, ok: false, error: message });
+            return { type: "command_result", id, command: "login", ok: false, error: message };
+          } finally {
+            // A login that ended for any reason leaves nothing to answer.
+            for (const [requestId, settle] of [...this.authRequests]) {
+              this.authRequests.delete(requestId);
+              this.emit({ type: "auth_request_cancelled", requestId });
+              settle({ cancelled: true });
+            }
+          }
+        }
+        case "logout": {
+          const auth = this.options.auth;
+          if (!auth) {
+            return this.unsupported(id, "logout", "log out");
+          }
+          await auth.logout(command.provider);
+          return { type: "command_result", id, command: "logout", ok: true };
+        }
+        case "auth_reply": {
+          // A reply to a request the core has forgotten is ignored rather than
+          // failing: the core withdraws requests on its own, and the two can
+          // cross on the wire.
+          const settle = this.authRequests.get(command.requestId);
+          settle?.({
+            ...(command.value !== undefined ? { value: command.value } : {}),
+            ...(command.cancelled !== undefined ? { cancelled: command.cancelled } : {}),
+          });
+          return { type: "command_result", id, command: "auth_reply", ok: true };
         }
         case "get_themes": {
           const themes = this.options.themes;

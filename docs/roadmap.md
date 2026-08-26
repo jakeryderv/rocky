@@ -1,6 +1,6 @@
 # Roadmap and carried debt
 
-Status snapshot as of 2026-08-26. Decisions live in [`docs/decisions/`](decisions/); this file tracks
+Status snapshot as of 2026-08-26; phase A is complete and phase B is now active. Decisions live in [`docs/decisions/`](decisions/); this file tracks
 sequencing and known debt. Update it when items land or priorities change.
 
 ## Where this is going
@@ -47,6 +47,12 @@ other 19 live in `core/` and `cli/` and need real work (see phase C).
   `/theme`, `/thinking` and `/keys`, with the client painting from the core's own resolved theme colours so
   both front ends share one theme choice. Keybindings stay fixed and `/keys` is a help screen: the core's
   bindings are `pi-tui`-coupled and their replacement is a phase C2 design decision, not a port.
+- **Auth and login** ([#20](https://github.com/jakeryderv/rocky/issues/20)). `/login` and `/logout` in the
+  client, over `get_providers`, `login`, `logout`, an `auth_request`/`auth_reply` pair correlated by id, and
+  `auth_notice`/`auth_end` events. The issue's premise was wrong: `rocky auth` is read-only and cannot log
+  anyone in. But `ModelRuntime.login()` is already headless — it drives everything through `prompt` and
+  `notify` callbacks, and the pi-tui login dialog is only one implementation of those — so the shell-out
+  stopgap was never needed and the contract surface is the real one.
 - **Export, fork, clone, naming, stats, and history** ([#28](https://github.com/jakeryderv/rocky/issues/28),
   which absorbed `get_entries`/`get_tree` from #22). History crosses the seam as `SessionEntrySummary`, a
   projection of the harness's nine-variant `SessionEntry` union: identity, parent, kind, preview, timestamp
@@ -80,21 +86,22 @@ other 19 live in `core/` and `cli/` and need real work (see phase C).
 - **`pi-client` and `pi-protocol` dropped** with the harness's dead `src/client/` remote-session surface —
   the last dependency on the Pi *ecosystem's* wire protocol rather than on its engine.
 
-## Phase A — grow the client to daily use
+## Phase A — grow the client to daily use — **complete**
 
-The contract exposes 19 commands; the harness RPC protocol has 32. That gap, plus missing UI, is the work.
-Blocking items first.
+Every item (#19-#28) is done and listed under [Done](#done). The contract went from 13 commands to 27; the
+harness RPC protocol has 32, and the remainder is either deliberately not modelled (`get_tree`, whose
+information `get_entries` already carries) or has no client that wants it yet (`cycle_model`,
+`cycle_thinking_level`, `set_auto_retry`, `abort_retry`, `get_last_assistant_text`, `import`).
 
-Phase A is the active phase, so it is also tracked as [open issues](https://github.com/jakeryderv/rocky/issues?q=is%3Aopen+label%3Aphase-a).
-Later phases stay narrative here until they become active. When an issue's scope changes, change this file
-with it.
+Phase B is now the active phase. Two things learned here are worth carrying into it:
 
-1. **Auth and login** ([#20](https://github.com/jakeryderv/rocky/issues/20)). The hardest gap: auth was never in the RPC protocol at all. It lives only in
-   `modes/interactive` (`login-dialog.ts`, `oauth-selector.ts`) and the `rocky auth` subcommand, so the
-   client cannot configure a provider. Shell out to `rocky auth` first; a Rocky-owned auth surface in the
-   contract is the real answer.
-
-Every item is done. What is left before phase B is the auth gap above.
+- **The client host is the untested surface.** Neither gate constructs a session, so `src/client-host/`
+  changes are unverified by CI. Two real defects — extensions never booting, and a resumed session rendering
+  empty — reached `main` before a manual offline run of the host found them. Phase B's packaging decision
+  should decide how that gets covered.
+- **Pure modules carry the logic.** `packages/client/src/model/` holds the decision-making and is tested in
+  the Node suite; `App.tsx` is wiring, and the rendered-frame tests only prove the wiring. That split is what
+  kept the Bun suite small while the client grew.
 
 ## Phase B — flip the default and move to Bun
 
@@ -147,6 +154,9 @@ client, remote execution, daemon, sandbox isolation).
   Bun's native fetch reads `HTTP(S)_PROXY` itself, so the practical gap is narrow — but proxied requests
   under Bun have not been exercised. Note this is separate from the entry-point gap above: the client path
   skips the call entirely, on either runtime.
+- **A login's URL is displayed, never opened.** The inherited TUI calls `openBrowser` on an `auth_url`
+  notice; the client does not, because the contract is client-agnostic and a remote client has no browser to
+  open. A local convenience for the terminal client is a client-side decision that has not been made.
 - **`export_html` returns a path on the core's machine**, the one place the contract carries a filesystem
   path. For the terminal client that is the answer to "where did it go"; a remote client would need the HTML
   itself, which needs a size story the contract does not have yet.
@@ -154,7 +164,9 @@ client, remote execution, daemon, sandbox isolation).
   replacement cwd through a UI the headless host does not have, so the switch fails with the harness's error
   instead of prompting. Same root cause as the trust gap below.
 - **The client cannot resolve project trust interactively** ([#30](https://github.com/jakeryderv/rocky/issues/30)). A headless host has no UI to prompt with, so an
-  undecided project resolves to untrusted. Phase A needs a trust prompt in the client.
+  undecided project resolves to untrusted. The client now has the machinery for it — the login flow proves a
+  core-initiated prompt can cross the contract and be answered — so a trust prompt is a matter of reusing
+  that shape rather than inventing one.
 - **Model calls are unreachable from the test suite by policy**, which is what let the `EEXIST` session-flush
   bug reach every turn undetected. The contract adapter narrows this — its mapping functions are pure and
   fully tested — but a scripted live smoke against a real provider remains manual.

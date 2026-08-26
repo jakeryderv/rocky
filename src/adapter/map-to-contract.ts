@@ -7,9 +7,13 @@
  */
 import type {
   AssistantContentBlock,
+  AuthMethod,
+  AuthRequestKind,
+  AuthSource,
   CompactionReason,
   MessageDelta,
   ModelRef,
+  ProviderAuth,
   SessionEntryKind,
   SessionEntrySummary,
   SessionEvent,
@@ -184,6 +188,124 @@ export function indexSessionsByPath(infos: readonly PiSessionInfoLike[]): Map<st
     }
   }
   return index;
+}
+
+const AUTH_REQUEST_KINDS: readonly AuthRequestKind[] = ["text", "secret", "select", "manual_code"];
+
+const AUTH_SOURCES: readonly AuthSource[] = [
+  "stored",
+  "runtime",
+  "environment",
+  "fallback",
+  "models_json_key",
+  "models_json_command",
+];
+
+/**
+ * Narrow a prompt kind to what the contract models.
+ *
+ * An unknown kind becomes `"text"` rather than being dropped: dropping it would
+ * strand a login waiting for an answer no client was ever asked for, and a free
+ * text field is the one answer shape that always works.
+ */
+export function toAuthRequestKind(kind: unknown): AuthRequestKind {
+  return typeof kind === "string" && (AUTH_REQUEST_KINDS as readonly string[]).includes(kind)
+    ? (kind as AuthRequestKind)
+    : "text";
+}
+
+interface PiProviderLike {
+  id: string;
+  name?: string;
+  methods?: readonly string[];
+  authenticated?: boolean;
+  source?: string;
+  subscription?: boolean;
+  loginLabel?: string;
+}
+
+/** Reduce a provider and its auth status to what a login picker needs. */
+export function toProviderAuth(provider: PiProviderLike): ProviderAuth | undefined {
+  if (typeof provider.id !== "string" || provider.id.length === 0) {
+    return undefined;
+  }
+  const methods: AuthMethod[] = [];
+  for (const method of provider.methods ?? []) {
+    if (method === "oauth" || method === "api_key") {
+      methods.push(method);
+    }
+  }
+  const mapped: ProviderAuth = {
+    id: provider.id,
+    name: provider.name ?? provider.id,
+    methods,
+    authenticated: provider.authenticated ?? false,
+  };
+  if (provider.source !== undefined && (AUTH_SOURCES as readonly string[]).includes(provider.source)) {
+    mapped.source = provider.source as AuthSource;
+  }
+  if (provider.subscription) {
+    mapped.subscription = true;
+  }
+  if (provider.loginLabel !== undefined) {
+    mapped.loginLabel = provider.loginLabel;
+  }
+  return mapped;
+}
+
+interface PiAuthEventLike {
+  type?: string;
+  message?: string;
+  url?: string;
+  instructions?: string;
+  userCode?: string;
+  verificationUri?: string;
+  links?: readonly { label?: string; url?: string }[];
+}
+
+/**
+ * Map a login's progress event onto the contract.
+ *
+ * Returns undefined for a kind the contract does not model — losing a progress
+ * message costs nothing, unlike losing a prompt.
+ */
+export function toAuthNotice(
+  event: PiAuthEventLike,
+): Extract<SessionEvent, { type: "auth_notice" }> | undefined {
+  if (event.type === "info") {
+    return {
+      type: "auth_notice",
+      kind: "info",
+      message: event.message ?? "",
+      ...(event.links
+        ? {
+            links: event.links
+              .filter((link) => typeof link.url === "string")
+              .map((link) => ({ label: link.label ?? (link.url as string), url: link.url as string })),
+          }
+        : {}),
+    };
+  }
+  if (event.type === "auth_url") {
+    return {
+      type: "auth_notice",
+      kind: "auth_url",
+      url: event.url ?? "",
+      ...(event.instructions !== undefined ? { instructions: event.instructions } : {}),
+    };
+  }
+  if (event.type === "device_code") {
+    return {
+      type: "auth_notice",
+      kind: "device_code",
+      userCode: event.userCode ?? "",
+      verificationUri: event.verificationUri ?? "",
+    };
+  }
+  if (event.type === "progress") {
+    return { type: "auth_notice", kind: "progress", message: event.message ?? "" };
+  }
+  return undefined;
 }
 
 const SESSION_ENTRY_KINDS: readonly SessionEntryKind[] = [

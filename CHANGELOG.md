@@ -2,6 +2,25 @@
 
 ## Unreleased
 
+- **The client can sign in.** `/login` lists every provider and every way into it; `/logout` removes a stored
+  credential. OAuth and API-key logins both work, including the device-code flows, without leaving the
+  client.
+
+- **Auth crosses the seam as a conversation, not a call.** A login has to show a URL or a device code and
+  then wait, so the contract gains an `auth_request` / `auth_reply` pair correlated by id, plus `auth_notice`
+  and `auth_end` events, `get_providers`, `login` and `logout`. The request/reply shape is deliberately the
+  one the harness already uses for extension UI over RPC rather than a new invention. It also handles a case
+  that only shows up in practice: several OAuth flows display a URL and simultaneously offer to take a pasted
+  redirect, racing a local callback server against it — so a request can be *withdrawn*, and
+  `auth_request_cancelled` is what makes the prompt disappear on its own.
+
+- **Issue #20's premise was wrong, and this does the real thing instead.** It proposed shelling out to
+  `rocky auth` as a stopgap. `rocky auth` is read-only — `check`, `print-api-key`, `print-bearer-token` — and
+  cannot log anyone in; login existed only inside the `pi-tui` interactive mode. But the harness's own login
+  turned out to be fully headless already: `ModelRuntime.login()` drives everything through `prompt` and
+  `notify` callbacks, and the pi-tui dialog is just one implementation of those two. So the client calls it
+  directly, and the stopgap was never needed.
+
 - **The client is themed.** `/theme` switches the colour theme, and the client paints from the theme's own
   resolved colours rather than hard-coded hex. The setting is the core's, so a theme chosen in the client is
   the theme `rocky` uses too, and a change made anywhere arrives as a `theme_changed` push. Every colour key
