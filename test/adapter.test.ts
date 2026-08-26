@@ -321,8 +321,22 @@ describe("mapping harness values to the contract", () => {
   });
 
   it("drops harness events with no contract representation", () => {
-    expect(toSessionEvent({ type: "bash_execution_update" })).toBeUndefined();
+    expect(toSessionEvent({ type: "entry_appended" })).toBeUndefined();
     expect(toSessionEvent({ type: "summarization_retry_finished" })).toBeUndefined();
+  });
+
+  // A delta, not a snapshot — `tool_progress` next door is the other way round,
+  // and treating this one as cumulative would show only the final chunk.
+  it("carries bash output as an append, tagged with the command that asked", () => {
+    expect(toSessionEvent({ type: "bash_execution_update", id: "c19", delta: "· ·" })).toEqual({
+      type: "bash_output",
+      commandId: "c19",
+      delta: "· ·",
+    });
+    expect(toSessionEvent({ type: "bash_execution_update", delta: "x" })).toEqual({
+      type: "bash_output",
+      delta: "x",
+    });
   });
 
   it("emits nothing for a message_update carrying only a cumulative snapshot", () => {
@@ -364,6 +378,9 @@ function fakeSession(overrides: Partial<AgentSessionLike> = {}) {
     setFollowUpMode: vi.fn(),
     setAutoCompactionEnabled: vi.fn(),
     compact: vi.fn(async () => ({})),
+    isBashRunning: false,
+    executeBash: vi.fn(async () => ({ output: "", exitCode: 0, cancelled: false, truncated: false })),
+    abortBash: vi.fn(),
     ...overrides,
   };
   return { session: session as unknown as AgentSessionLike, emit: (event: unknown) => listener?.(event) };
@@ -387,6 +404,7 @@ describe("PiAgentSessionAdapter", () => {
       autoCompactionEnabled: true,
       messageCount: 0,
       pendingMessageCount: 0,
+      isBashRunning: false,
     });
   });
 
@@ -402,7 +420,7 @@ describe("PiAgentSessionAdapter", () => {
       type: "message_update",
       assistantMessageEvent: { type: "text_delta", contentIndex: 0, delta: "hi" },
     });
-    emit({ type: "bash_execution_update", delta: "ls" });
+    emit({ type: "entry_appended", entry: { id: "e1" } });
     emit({ type: "agent_settled" });
 
     expect(seen).toEqual([
@@ -513,7 +531,7 @@ describe("PiAgentSessionAdapter", () => {
     adapter.subscribe((event) => seen.push(event));
 
     mutable.pendingMessageCount = 2;
-    emit({ type: "bash_execution_update", delta: "ls" });
+    emit({ type: "entry_appended", entry: { id: "e1" } });
 
     expect(seen.map((event) => event.type)).toEqual(["state_changed"]);
   });
@@ -735,6 +753,84 @@ describe("PiAgentSessionAdapter", () => {
       const result = await adapter.execute(command);
       expect(result.ok).toBe(false);
     }
+  });
+
+  it("brackets a shell command with start and end events", async () => {
+    const chunks: ((chunk: string) => void)[] = [];
+    const { session } = fakeSession({
+      executeBash: vi.fn(async (_command: string, onChunk?: (chunk: string) => void) => {
+        if (onChunk) {
+          chunks.push(onChunk);
+        }
+        return { output: "ok", exitCode: 0, cancelled: false, truncated: false };
+      }),
+    });
+    const adapter = new PiAgentSessionAdapter(session, { cwd: "/work" });
+    const seen: SessionEvent[] = [];
+    adapter.start();
+    adapter.subscribe((event) => seen.push(event));
+
+    const result = await adapter.execute({ id: "b1", type: "bash", command: "ls", excludeFromContext: true });
+
+    expect(result).toEqual({
+      type: "command_result",
+      id: "b1",
+      command: "bash",
+      ok: true,
+      result: { output: "ok", exitCode: 0, cancelled: false, truncated: false },
+    });
+    expect(seen.filter((event) => event.type === "bash_start")).toEqual([
+      { type: "bash_start", commandId: "b1", command: "ls" },
+    ]);
+    expect(seen.filter((event) => event.type === "bash_end")).toEqual([
+      {
+        type: "bash_end",
+        commandId: "b1",
+        result: { output: "ok", exitCode: 0, cancelled: false, truncated: false },
+      },
+    ]);
+    expect(session.executeBash).toHaveBeenCalledWith("ls", undefined, {
+      excludeFromContext: true,
+      id: "b1",
+    });
+  });
+
+  // A killed process reports no exit code at all, which must not become a 0.
+  it("keeps a killed command's missing exit code missing", async () => {
+    const { session } = fakeSession({
+      executeBash: vi.fn(async () => ({ output: "partial", cancelled: true, truncated: true })),
+    });
+    const adapter = new PiAgentSessionAdapter(session, { cwd: "/work" });
+    const result = await adapter.execute({ type: "bash", command: "sleep 100" });
+    expect(result).toEqual({
+      type: "command_result",
+      id: undefined,
+      command: "bash",
+      ok: true,
+      result: { output: "partial", cancelled: true, truncated: true },
+    });
+  });
+
+  it("reports plainly when the session cannot run shell commands", async () => {
+    const { session } = fakeSession();
+    // A session from a host that does not expose shell execution at all.
+    delete (session as { executeBash?: unknown }).executeBash;
+    const adapter = new PiAgentSessionAdapter(session, { cwd: "/work" });
+    const result = await adapter.execute({ type: "bash", command: "ls" });
+    expect(result.ok).toBe(false);
+  });
+
+  it("forwards an abort to the session", async () => {
+    const abortBash = vi.fn();
+    const { session } = fakeSession({ abortBash });
+    const adapter = new PiAgentSessionAdapter(session, { cwd: "/work" });
+    expect(await adapter.execute({ type: "abort_bash" })).toEqual({
+      type: "command_result",
+      id: undefined,
+      command: "abort_bash",
+      ok: true,
+    });
+    expect(abortBash).toHaveBeenCalled();
   });
 
   it("keeps every command result JSON-serializable", async () => {

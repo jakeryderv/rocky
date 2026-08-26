@@ -9,7 +9,7 @@ import { defaultTextareaKeyBindings } from "@opentui/core";
 import { useKeyboard, useRenderer } from "@opentui/solid";
 import type { ModelRef, SessionPort, SessionSummary } from "@rocky/contract";
 import { createEffect, createMemo, createSignal, For, Show } from "solid-js";
-import { mergeCommands, routeSubmission } from "./model/commands.js";
+import { mergeCommands, parseBashPrefix, routeSubmission } from "./model/commands.js";
 import {
   applyCompletion,
   clampSelection,
@@ -25,7 +25,7 @@ import { filterSessions, sessionLabel, sortSessions } from "./model/sessions.js"
 import { entryLines } from "./model/transcript.js";
 import { createSessionStore } from "./session-store.js";
 
-const ROLE_PREFIX = { user: "›", assistant: "🅡", tool_result: "⚙" } as const;
+const ROLE_PREFIX = { user: "›", assistant: "🅡", tool_result: "⚙", bash: "$" } as const;
 
 export function App(props: { port: SessionPort; onQuit?: (() => void) | undefined }) {
   const store = createSessionStore(props.port);
@@ -145,6 +145,11 @@ export function App(props: { port: SessionPort; onQuit?: (() => void) | undefine
     // The editor keeps its text after submit; clear it so the next prompt
     // starts empty and history navigation has a known baseline.
     showInInput("");
+    const bash = parseBashPrefix(text);
+    if (bash) {
+      void store.runBash(bash.command, bash.excludeFromContext);
+      return;
+    }
     const route = routeSubmission(text, commands());
     if (route.kind === "client") {
       // A client command never reaches the core, but it is still history: the
@@ -192,7 +197,11 @@ export function App(props: { port: SessionPort; onQuit?: (() => void) | undefine
         closeOverlay();
         return;
       }
-      if (store.transcript().streaming) {
+      // A running shell command is the most immediate thing ctrl+c can be
+      // aimed at, so it is cancelled before a turn is aborted.
+      if (store.state()?.isBashRunning) {
+        void store.abortBash();
+      } else if (store.transcript().streaming) {
         void store.abort();
       } else {
         quit();
@@ -382,7 +391,7 @@ export function App(props: { port: SessionPort; onQuit?: (() => void) | undefine
             ? "Filter models…"
             : overlay() === "session"
               ? "Filter sessions…"
-              : "Ask Rocky…   / commands · shift+enter newline · ctrl+c aborts, or quits when idle"
+              : "Ask Rocky…   / commands · ! shell · shift+enter newline · ctrl+c aborts, or quits when idle"
         }
         // Grows with the draft rather than scrolling a one-row window, and
         // stops at a bound so a long paste cannot swallow the transcript.

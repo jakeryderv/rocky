@@ -6,7 +6,12 @@
  * The routing rule is where that split becomes real.
  */
 import { describe, expect, it } from "vitest";
-import { CLIENT_COMMANDS, mergeCommands, routeSubmission } from "../packages/client/src/model/commands.js";
+import {
+  CLIENT_COMMANDS,
+  mergeCommands,
+  parseBashPrefix,
+  routeSubmission,
+} from "../packages/client/src/model/commands.js";
 import type { SlashCommand } from "../src/contract/index.js";
 
 const CORE: SlashCommand[] = [
@@ -58,5 +63,26 @@ describe("routeSubmission", () => {
   it("does not claim a command that merely starts the same", () => {
     expect(routeSubmission("/models")).toEqual({ kind: "core" });
     expect(routeSubmission("/model-foo")).toEqual({ kind: "core" });
+  });
+});
+
+describe("parseBashPrefix", () => {
+  it("ignores ordinary prose", () => {
+    expect(parseBashPrefix("run the tests")).toBeUndefined();
+    expect(parseBashPrefix("/model")).toBeUndefined();
+  });
+
+  it("takes a single bang as a shell command the model will see", () => {
+    expect(parseBashPrefix("!npm test")).toEqual({ command: "npm test", excludeFromContext: false });
+  });
+
+  // The inherited TUI's convention, kept so the two front ends do not disagree.
+  it("takes a double bang as one kept out of context", () => {
+    expect(parseBashPrefix("!!git log")).toEqual({ command: "git log", excludeFromContext: true });
+  });
+
+  it("treats a bang with nothing after it as not a command", () => {
+    expect(parseBashPrefix("!")).toBeUndefined();
+    expect(parseBashPrefix("!!   ")).toBeUndefined();
   });
 });

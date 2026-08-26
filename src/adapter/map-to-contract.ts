@@ -462,6 +462,8 @@ interface PiSessionEventLike {
   finalError?: string;
   name?: string;
   level?: unknown;
+  id?: string;
+  delta?: string;
 }
 
 /**
@@ -577,6 +579,14 @@ export function toSessionEvent(event: PiSessionEventLike): SessionEvent | undefi
         success: event.success ?? false,
         attempt: event.attempt ?? 0,
         ...(event.finalError !== undefined ? { error: event.finalError } : {}),
+      };
+    case "bash_execution_update":
+      // A delta, not a snapshot: the harness streams chunks. The contract says
+      // so explicitly, because `tool_progress` next door is the other way round.
+      return {
+        type: "bash_output",
+        ...(event.id !== undefined ? { commandId: event.id } : {}),
+        delta: event.delta ?? "",
       };
     case "session_info_changed":
       return { type: "session_name_changed", ...(event.name !== undefined ? { name: event.name } : {}) };

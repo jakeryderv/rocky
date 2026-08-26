@@ -7,6 +7,7 @@
  * contract shapes already survive serialization.
  */
 import type {
+  BashResult,
   CommandResult,
   ModelRef,
   SessionCommand,
@@ -45,6 +46,7 @@ export interface AgentSessionLike {
   readonly autoCompactionEnabled: boolean;
   readonly messages: readonly unknown[];
   readonly pendingMessageCount: number;
+  readonly isBashRunning?: boolean;
   subscribe(listener: (event: unknown) => void): () => void;
   prompt(text: string, options?: { images?: unknown[] }): Promise<void>;
   steer(text: string, images?: unknown[]): Promise<void>;
@@ -56,6 +58,17 @@ export interface AgentSessionLike {
   setFollowUpMode(mode: "all" | "one-at-a-time"): void;
   setAutoCompactionEnabled(enabled: boolean): void;
   compact(customInstructions?: string): Promise<unknown>;
+  executeBash?(
+    command: string,
+    onChunk?: (chunk: string) => void,
+    options?: { excludeFromContext?: boolean; id?: string },
+  ): Promise<{
+    output?: string;
+    exitCode?: number;
+    cancelled?: boolean;
+    truncated?: boolean;
+  }>;
+  abortBash?(): void;
 }
 
 /** Resolves a provider/model id pair to the harness model object to activate. */
@@ -230,6 +243,7 @@ export class PiAgentSessionAdapter {
       autoCompactionEnabled: session.autoCompactionEnabled,
       messageCount: session.messages.length,
       pendingMessageCount: session.pendingMessageCount,
+      isBashRunning: session.isBashRunning ?? false,
     };
     if (session.sessionName !== undefined) {
       state.sessionName = session.sessionName;
@@ -370,6 +384,43 @@ export class PiAgentSessionAdapter {
           }
           return { type: "command_result", id, command: "new_session", ok: true };
         }
+        case "bash": {
+          if (!this.session.executeBash) {
+            return {
+              type: "command_result",
+              id,
+              command: "bash",
+              ok: false,
+              error: "This session cannot run shell commands",
+            };
+          }
+          // Start and end are emitted here rather than mapped, because the
+          // harness reports only the output stream. Every client watching the
+          // session needs the command text and the exit code, and a command
+          // result reaches only the one that asked.
+          this.emit({
+            type: "bash_start",
+            ...(id !== undefined ? { commandId: id } : {}),
+            command: command.command,
+          });
+          const raw = await this.session.executeBash(command.command, undefined, {
+            ...(command.excludeFromContext !== undefined
+              ? { excludeFromContext: command.excludeFromContext }
+              : {}),
+            ...(id !== undefined ? { id } : {}),
+          });
+          const result: BashResult = {
+            output: raw.output ?? "",
+            ...(raw.exitCode !== undefined ? { exitCode: raw.exitCode } : {}),
+            cancelled: raw.cancelled ?? false,
+            truncated: raw.truncated ?? false,
+          };
+          this.emit({ type: "bash_end", ...(id !== undefined ? { commandId: id } : {}), result });
+          return { type: "command_result", id, command: "bash", ok: true, result };
+        }
+        case "abort_bash":
+          this.session.abortBash?.();
+          return { type: "command_result", id, command: "abort_bash", ok: true };
         case "set_model": {
           const model = this.options.lookupModel?.(command.provider, command.modelId);
           if (model === undefined) {

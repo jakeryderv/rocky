@@ -173,6 +173,25 @@ export interface SlashCommand {
 }
 
 // ============================================================================
+// Bash
+// ============================================================================
+
+/**
+ * The outcome of a shell command the user ran directly.
+ *
+ * `exitCode` is absent when the process was killed rather than exiting. The
+ * harness also reports a path to a temp file holding untruncated output; that
+ * is deliberately not carried here, for the same reason a `SlashCommand` has no
+ * path — it is meaningless to a client that does not share the filesystem.
+ */
+export interface BashResult {
+  output: string;
+  exitCode?: number;
+  cancelled: boolean;
+  truncated: boolean;
+}
+
+// ============================================================================
 // Sessions
 // ============================================================================
 
@@ -220,6 +239,8 @@ export interface SessionState {
   autoCompactionEnabled: boolean;
   messageCount: number;
   pendingMessageCount: number;
+  /** A shell command the user started is still running. */
+  isBashRunning: boolean;
 }
 
 // ============================================================================
@@ -247,6 +268,14 @@ export type SessionCommand =
   | { id?: string | undefined; type: "list_sessions" }
   | { id?: string | undefined; type: "switch_session"; sessionId: string }
   | { id?: string | undefined; type: "new_session" }
+  /**
+   * Run a shell command directly, outside a turn.
+   *
+   * `excludeFromContext` keeps the command and its output out of what the model
+   * sees, which is what the inherited TUI's `!!` prefix does.
+   */
+  | { id?: string | undefined; type: "bash"; command: string; excludeFromContext?: boolean }
+  | { id?: string | undefined; type: "abort_bash" }
   | { id?: string | undefined; type: "set_thinking_level"; level: ThinkingLevel }
   | { id?: string | undefined; type: "set_steering_mode"; mode: QueueMode }
   | { id?: string | undefined; type: "set_follow_up_mode"; mode: QueueMode }
@@ -290,6 +319,7 @@ export type CommandResult =
       ok: true;
       sessions: SessionSummary[];
     }
+  | { type: "command_result"; id?: string | undefined; command: "bash"; ok: true; result: BashResult }
   /**
    * Acknowledgement for commands that return no payload.
    *
@@ -303,7 +333,13 @@ export type CommandResult =
       id?: string | undefined;
       command: Exclude<
         SessionCommandType,
-        "get_state" | "get_messages" | "get_available_models" | "set_model" | "get_commands" | "list_sessions"
+        | "get_state"
+        | "get_messages"
+        | "get_available_models"
+        | "set_model"
+        | "get_commands"
+        | "list_sessions"
+        | "bash"
       >;
       ok: true;
     }
@@ -355,6 +391,26 @@ export type SessionEvent =
    */
   | { type: "tool_progress"; toolCallId: string; name: string; content: string; truncated?: boolean }
   | { type: "tool_end"; toolCallId: string; result: ToolResultBlock }
+  // Bash the user ran directly
+  /**
+   * A shell command started.
+   *
+   * The harness reports only the output stream, so start and end are Rocky's.
+   * Without them a second client watching the same session would see output
+   * with no command attached and no exit code: a command result reaches only
+   * the client that issued it, while events reach everyone.
+   */
+  | { type: "bash_start"; commandId?: string; command: string }
+  /**
+   * More output.
+   *
+   * `delta` APPENDS — unlike `tool_progress`, whose `content` is a cumulative
+   * snapshot. The two are deliberately different shapes because the harness
+   * reports them differently, and treating this one as a snapshot would show
+   * only the final chunk.
+   */
+  | { type: "bash_output"; commandId?: string; delta: string }
+  | { type: "bash_end"; commandId?: string; result: BashResult }
   // Queueing
   | { type: "queue_update"; steering: string[]; followUp: string[] }
   // Compaction

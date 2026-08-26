@@ -40,6 +40,7 @@ function fakePort() {
             autoCompactionEnabled: true,
             messageCount: 0,
             pendingMessageCount: 0,
+            isBashRunning: false,
           },
         };
       }
@@ -712,9 +713,81 @@ test("rebuilds the transcript when the core switches session", async () => {
       autoCompactionEnabled: true,
       messageCount: 0,
       pendingMessageCount: 0,
+      isBashRunning: false,
     },
   });
   await t.renderOnce();
   await t.renderOnce();
   expect(t.captureCharFrame()).not.toContain("OLD HISTORY");
+});
+
+test("runs a shell command typed with a bang and shows its output", async () => {
+  const { port, sent, emit } = fakePort();
+  const t = await testRender(() => <App port={port} />, { width: 70, height: 16 });
+  await t.renderOnce();
+
+  await t.mockInput.typeText("!npm test");
+  t.mockInput.pressEnter();
+  await t.renderOnce();
+
+  expect(sent.filter((command) => command.type === "prompt")).toEqual([]);
+  expect(sent.filter((command) => command.type === "bash")).toEqual([{ type: "bash", command: "npm test" }]);
+
+  emit({ type: "bash_start", command: "npm test" });
+  emit({ type: "bash_output", delta: "263 passed\n" });
+  await t.renderOnce();
+  const frame = t.captureCharFrame();
+  expect(frame).toContain("npm test");
+  expect(frame).toContain("263 passed");
+});
+
+// The inherited TUI's convention; the two front ends must not disagree.
+test("keeps a double-bang command out of the model's context", async () => {
+  const { port, sent } = fakePort();
+  const t = await testRender(() => <App port={port} />, { width: 70, height: 16 });
+  await t.renderOnce();
+
+  await t.mockInput.typeText("!!git log");
+  t.mockInput.pressEnter();
+  await t.renderOnce();
+
+  expect(sent.filter((command) => command.type === "bash")).toEqual([
+    { type: "bash", command: "git log", excludeFromContext: true },
+  ]);
+});
+
+// A running shell command is the most immediate thing ctrl+c can be aimed at.
+test("ctrl+c cancels a running shell command before anything else", async () => {
+  const { port, sent, emit } = fakePort();
+  let quits = 0;
+  const t = await testRender(() => <App port={port} onQuit={() => (quits += 1)} />, {
+    width: 70,
+    height: 16,
+  });
+  await t.renderOnce();
+
+  emit({
+    type: "state_changed",
+    state: {
+      sessionId: "s1",
+      cwd: "/work",
+      thinkingLevel: "medium",
+      isStreaming: false,
+      isCompacting: false,
+      steeringMode: "all",
+      followUpMode: "all",
+      autoCompactionEnabled: true,
+      messageCount: 0,
+      pendingMessageCount: 0,
+      isBashRunning: true,
+    },
+  });
+  await t.renderOnce();
+
+  t.mockInput.pressCtrlC();
+  await t.renderOnce();
+
+  expect(sent.filter((command) => command.type === "abort_bash")).toHaveLength(1);
+  expect(sent.filter((command) => command.type === "abort")).toEqual([]);
+  expect(quits).toBe(0);
 });

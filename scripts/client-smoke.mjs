@@ -52,6 +52,7 @@ const port = {
             autoCompactionEnabled: true,
             messageCount: 0,
             pendingMessageCount: 0,
+            isBashRunning: false,
           },
         }
       : { type: "command_result", command: command.type, ok: true };

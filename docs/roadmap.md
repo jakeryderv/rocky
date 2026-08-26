@@ -43,6 +43,13 @@ other 19 live in `core/` and `cli/` and need real work (see phase C).
 - **First OpenTUI + Solid client slice** (`packages/client`) over a `SessionPort`, with a headless Bun render
   suite, a root-level client smoke, and a separate Bun CI job. See ADR 0005. Scrollback, incremental tool
   output, a working quit path, prompt history, and multi-line paste have since landed.
+- **Bash passthrough** ([#24](https://github.com/jakeryderv/rocky/issues/24)). `!` and `!!` at the prompt,
+  output streaming into the transcript, and ctrl+c cancelling a running command before it aborts a turn.
+- **Session list, resume, and new session** ([#22](https://github.com/jakeryderv/rocky/issues/22)).
+  `list_sessions`, `switch_session`, `new_session` and a `session_switched` event in the contract, with
+  `/resume` and `/new` in the client. The client host was rebuilt on `AgentSessionRuntime` to do it, which
+  also fixed two silent defects: extensions never booted under the client (`bindExtensions` was never
+  called), and a resumed session rendered an empty transcript.
 - **True multi-line prompt editing** ([#23](https://github.com/jakeryderv/rocky/issues/23)). A textarea that
   grows with the draft, replacing the held-aside paste. Enter sends; shift+Enter, alt+Enter and ctrl+J insert
   a newline.
@@ -63,7 +70,7 @@ other 19 live in `core/` and `cli/` and need real work (see phase C).
 
 ## Phase A — grow the client to daily use
 
-The contract exposes 14 commands; the harness RPC protocol has 32. That gap, plus missing UI, is the work.
+The contract exposes 19 commands; the harness RPC protocol has 32. That gap, plus missing UI, is the work.
 Blocking items first.
 
 Phase A is the active phase, so it is also tracked as [open issues](https://github.com/jakeryderv/rocky/issues?q=is%3Aopen+label%3Aphase-a).
@@ -74,10 +81,8 @@ with it.
    `modes/interactive` (`login-dialog.ts`, `oauth-selector.ts`) and the `rocky auth` subcommand, so the
    client cannot configure a provider. Shell out to `rocky auth` first; a Rocky-owned auth surface in the
    contract is the real answer.
-2. **Session list, resume, and new session** ([#22](https://github.com/jakeryderv/rocky/issues/22)). Needs `switch_session`, `new_session`, `get_entries`, and
-   `get_tree` added to the contract.
-Then, needed but not blocking: bash passthrough ([#24](https://github.com/jakeryderv/rocky/issues/24));
-compaction and steering/follow-up queue UI over
+
+Then, needed but not blocking: compaction and steering/follow-up queue UI over
 commands the contract already has ([#26](https://github.com/jakeryderv/rocky/issues/26)); settings, theme,
 and keybinding screens ([#27](https://github.com/jakeryderv/rocky/issues/27)); `export_html`, `fork`,
 `clone`, session stats, and the in-session entry/tree navigation `get_entries` and `get_tree` provide

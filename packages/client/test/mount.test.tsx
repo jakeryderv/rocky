@@ -41,6 +41,7 @@ function idlePort(): SessionPort {
               autoCompactionEnabled: true,
               messageCount: 0,
               pendingMessageCount: 0,
+              isBashRunning: false,
             },
           }
         : { type: "command_result", command: command.type as never, ok: true };

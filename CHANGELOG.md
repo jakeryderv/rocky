@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+- **Shell commands run from the prompt.** `!cmd` runs a command and shows it to the model; `!!cmd` keeps both
+  out of context, the inherited TUI's convention. Output streams into the transcript as it arrives, and
+  ctrl+c cancels a running command before it aborts a turn or quits — a running command is the most immediate
+  thing that key can be aimed at. The contract gains `bash`, `abort_bash`, a `BashResult`, `isBashRunning` on
+  the session state, and `bash_start` / `bash_output` / `bash_end` events. Start and end are Rocky's: the
+  harness reports only the output stream, and a command result reaches only the client that issued it while
+  events reach everyone. `bash_output` carries a **delta**, unlike `tool_progress`, whose content is a
+  cumulative snapshot — the contract says so at both, because getting it backwards shows only the last chunk.
+
 - **The client can list, resume, and start sessions.** `/resume` opens a picker filtered over name, opening
   message and directory; `/new` starts a fresh session. The contract gains `list_sessions`, `switch_session`,
   `new_session`, a `SessionSummary`, and a `session_switched` event. Sessions are addressed by id, not by the
