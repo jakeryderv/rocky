@@ -51,22 +51,28 @@ other 19 live in `core/` and `cli/` and need real work (see phase C).
 The contract exposes 13 commands; the harness RPC protocol has about 30. That gap, plus missing UI, is the
 work. Blocking items first.
 
-1. **Slash commands.** `get_commands` exists in the harness RPC protocol but not the contract; without it
+Phase A is the active phase, so it is also tracked as [open issues](https://github.com/jakeryderv/rocky/issues?q=is%3Aopen+label%3Aphase-a).
+Later phases stay narrative here until they become active. When an issue's scope changes, change this file
+with it.
+
+1. **Slash commands** ([#19](https://github.com/jakeryderv/rocky/issues/19)). `get_commands` exists in the harness RPC protocol but not the contract; without it
    there is no `/model`, `/compact`, or skill invocation from the client.
-2. **Auth and login.** The hardest gap: auth was never in the RPC protocol at all. It lives only in
+2. **Auth and login** ([#20](https://github.com/jakeryderv/rocky/issues/20)). The hardest gap: auth was never in the RPC protocol at all. It lives only in
    `modes/interactive` (`login-dialog.ts`, `oauth-selector.ts`) and the `rocky auth` subcommand, so the
    client cannot configure a provider. Shell out to `rocky auth` first; a Rocky-owned auth surface in the
    contract is the real answer.
-3. **Model switcher UI.** `set_model` and `get_available_models` are already in the contract with no UI on
+3. **Model switcher UI** ([#21](https://github.com/jakeryderv/rocky/issues/21)). `set_model` and `get_available_models` are already in the contract with no UI on
    top of them.
-4. **Session list, resume, and new session.** Needs `switch_session`, `new_session`, `get_entries`, and
+4. **Session list, resume, and new session** ([#22](https://github.com/jakeryderv/rocky/issues/22)). Needs `switch_session`, `new_session`, `get_entries`, and
    `get_tree` added to the contract.
-5. **Multi-line input editing.** Today a pasted block is held aside rather than editable.
+5. **Multi-line input editing** ([#23](https://github.com/jakeryderv/rocky/issues/23)). Today a pasted block is held aside rather than editable.
 
-Then, needed but not blocking: bash passthrough (`bash`, `abort_bash`); `state_changed` as a push so the
-store can stop refreshing state on turn boundaries; compaction and steering/follow-up queue UI over commands
-the contract already has; settings, theme, and keybinding screens; `export_html`, `fork`, `clone`, and
-session stats.
+Then, needed but not blocking: bash passthrough ([#24](https://github.com/jakeryderv/rocky/issues/24));
+`state_changed` as a push so the store can stop refreshing state on turn boundaries
+([#25](https://github.com/jakeryderv/rocky/issues/25)); compaction and steering/follow-up queue UI over
+commands the contract already has ([#26](https://github.com/jakeryderv/rocky/issues/26)); settings, theme,
+and keybinding screens ([#27](https://github.com/jakeryderv/rocky/issues/27)); `export_html`, `fork`,
+`clone`, and session stats ([#28](https://github.com/jakeryderv/rocky/issues/28)).
 
 ## Phase B — flip the default and move to Bun
 
@@ -103,7 +109,7 @@ client, remote execution, daemon, sandbox isolation).
 
 ## Carried debt
 
-- **The two entry points diverge before the session.** `rocky` runs `harness.main()`, which calls
+- **The two entry points diverge before the session** ([#29](https://github.com/jakeryderv/rocky/issues/29)). `rocky` runs `harness.main()`, which calls
   `configureHttpDispatcher()` and sets `AI_AGENT`, `PI_CODING_AGENT`, `ROCKY_CODING_AGENT`, and
   `process.title`. `src/client-host/create-session-port.ts` constructs the session directly and does none of
   it, so the client has no HTTP idle timeout or proxy agent and its bash subprocesses see a different
@@ -113,7 +119,7 @@ client, remote execution, daemon, sandbox isolation).
   Bun's native fetch reads `HTTP(S)_PROXY` itself, so the practical gap is narrow — but proxied requests
   under Bun have not been exercised. Note this is separate from the entry-point gap above: the client path
   skips the call entirely, on either runtime.
-- **The client cannot resolve project trust interactively.** A headless host has no UI to prompt with, so an
+- **The client cannot resolve project trust interactively** ([#30](https://github.com/jakeryderv/rocky/issues/30)). A headless host has no UI to prompt with, so an
   undecided project resolves to untrusted. Phase A needs a trust prompt in the client.
 - **Model calls are unreachable from the test suite by policy**, which is what let the `EEXIST` session-flush
   bug reach every turn undetected. The contract adapter narrows this — its mapping functions are pure and
