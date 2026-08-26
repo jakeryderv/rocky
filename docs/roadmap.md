@@ -1,83 +1,138 @@
 # Roadmap and carried debt
 
-Status snapshot as of 2026-08-25 (contract slice landed; see ADR 0004). Decisions live in
-[`docs/decisions/`](decisions/); this file tracks sequencing and known debt. Update it when items land or
-priorities change.
+Status snapshot as of 2026-08-26. Decisions live in [`docs/decisions/`](decisions/); this file tracks
+sequencing and known debt. Update it when items land or priorities change.
+
+## Where this is going
+
+Rocky replaces the *presentation* half of the forked harness with its own client, then removes `pi-tui`.
+The agent underneath stays Pi-derived and Rocky-owned. Concretely:
+
+```text
+TODAY                                   AFTER
+rocky           -> inherited pi-tui     rocky -> Rocky's OpenTUI client
+npm run client  -> Rocky's client              (via src/contract/)
+
+packages/harness  57,701 lines          packages/harness  ~40,000 lines
+  pi-tui, pi-agent-core, pi-ai            pi-agent-core, pi-ai
+```
+
+`modes/interactive` is 17,415 of those lines. Deleting it is 41 of the 60 files that import `pi-tui`; the
+other 19 live in `core/` and `cli/` and need real work (see phase C).
 
 ## Done
 
 - Context-file discovery enabled; skills stay Rocky-only (ADR 0002).
 - Bun compatibility spike for Pi 0.84.2 (results recorded in ADR 0003).
 - `packages/harness`: source fork of `pi-coding-agent` v0.84.2, standalone, Rocky-branded, self-update and
-  managed downloads removed, undici gated under Bun; fork suite green (1853 passed / 49 skipped).
+  managed downloads removed, undici gated under Bun.
 - Root CLI runs on the fork; `PI_PACKAGE_DIR` bridge and all runtime-rewriting workarounds deleted.
 - **Live provider streaming verified under Bun** (ADR 0003's outstanding verification debt). Print mode, the
   JSON event stream, mid-stream SIGINT abort, and RPC steer all behave identically under Node 24 and Bun
   1.4.0 against a live `openai-codex` provider; streamed content matched exactly.
 - **Session-file creation bug fixed.** Rocky's private-storage extension pre-created the session file, so the
   harness's exclusive-create (`wx`) flush failed with `EEXIST` on the first assistant message — every model
-  turn crashed. Privacy now lives in the harness at the point of creation; the extension only covers
-  directories and pre-existing files.
+  turn crashed. Privacy now lives in the harness at the point of creation.
 - **Harness test isolation.** The suite writes to a per-run temporary agent directory instead of the
-  developer's real `~/.rocky/agent`, and strips inherited credential/cloud/proxy state like the root suite.
+  developer's real `~/.rocky/agent`, and strips inherited credential/cloud/proxy state.
 - **Rocky contract, first slice** (`src/contract/`) with `PiAgentSessionAdapter` (`src/adapter/`), derived
   from the harness RPC protocol rather than designed greenfield (ADR 0004). Isolation and JSON /
   `structuredClone` round-trips are enforced by tests.
-
-- **Contract corrections from adversarial review.** Six mapping defects (tool-result rendering, `message_start`
-  roles, missing delta block indices, ambiguous tool-call streaming, frozen usage, dropped error text) and one
-  vacuous exhaustiveness test, all fixed with regression tests derived from upstream shapes. See ADR 0004.
-
+- **Contract corrections from adversarial review.** Six mapping defects and one vacuous exhaustiveness test,
+  all fixed with regression tests derived from upstream shapes. See ADR 0004.
 - **First OpenTUI + Solid client slice** (`packages/client`) over a `SessionPort`, with a headless Bun render
-  suite, a root-level client smoke, and a separate Bun CI job. See ADR 0005.
+  suite, a root-level client smoke, and a separate Bun CI job. See ADR 0005. Scrollback, incremental tool
+  output, a working quit path, prompt history, and multi-line paste have since landed.
+- **`pi-client` and `pi-protocol` dropped** with the harness's dead `src/client/` remote-session surface —
+  the last dependency on the Pi *ecosystem's* wire protocol rather than on its engine.
 
-## Next (in order)
+## Phase A — grow the client to daily use
 
-1. **Grow the client to daily use** — the first slice renders a streaming transcript (text, thinking, tool
-   calls with results), a prompt input, abort on escape, and a status line; it is not yet a daily driver.
-   Scrollback, incremental tool output, a working quit path, prompt history, and multi-line paste have
-   landed. Next, in rough order: true multi-line editing in the input itself (today a pasted block is held
-   aside rather than editable), slash-command discovery (`get_commands` exists in the harness RPC protocol but not the
-   contract), session list and resume, incremental tool output (`tool_execution_update` and
-   `bash_execution_update` are dropped by the adapter today), and `state_changed` as a push so the client can
-   stop polling `get_state`. Keep the inherited `InteractiveMode` as the default until the client covers daily
-   use, then delete `modes/interactive` and drop `pi-tui`.
+The contract exposes 13 commands; the harness RPC protocol has about 30. That gap, plus missing UI, is the
+work. Blocking items first.
 
-2. **Bun toolchain migration** — move install/lockfile/CI/bin to Bun once the client work makes Bun the
-   actual runtime (`bun install`, lockfile pinning discipline equivalent to npm-shrinkwrap, CI image, test
-   runner decision for root vs harness suites).
-3. **Longer term** — see [`project-idea-outline.md`](project-idea-outline.md): multi-subagent experimentation
-   (isolated workspaces, pinned factors, repeatable scoring) once baseline behavior is stable; a process/RPC
-   boundary only when a concrete need appears (web client, remote execution, daemon, sandbox isolation).
+1. **Slash commands.** `get_commands` exists in the harness RPC protocol but not the contract; without it
+   there is no `/model`, `/compact`, or skill invocation from the client.
+2. **Auth and login.** The hardest gap: auth was never in the RPC protocol at all. It lives only in
+   `modes/interactive` (`login-dialog.ts`, `oauth-selector.ts`) and the `rocky auth` subcommand, so the
+   client cannot configure a provider. Shell out to `rocky auth` first; a Rocky-owned auth surface in the
+   contract is the real answer.
+3. **Model switcher UI.** `set_model` and `get_available_models` are already in the contract with no UI on
+   top of them.
+4. **Session list, resume, and new session.** Needs `switch_session`, `new_session`, `get_entries`, and
+   `get_tree` added to the contract.
+5. **Multi-line input editing.** Today a pasted block is held aside rather than editable.
+
+Then, needed but not blocking: bash passthrough (`bash`, `abort_bash`); `state_changed` as a push so the
+store can stop refreshing state on turn boundaries; compaction and steering/follow-up queue UI over commands
+the contract already has; settings, theme, and keybinding screens; `export_html`, `fork`, `clone`, and
+session stats.
+
+## Phase B — flip the default and move to Bun
+
+`rocky` launches the client; the bin shebang, install, lockfile, and CI move to Bun (this is forced — OpenTUI's
+renderer has no FFI backend on Node). Keep a `--legacy-tui` escape hatch for one release. Decide the test
+runner for the root and harness suites, and settle packaging, which `pack:check` no longer covers.
+
+## Phase C — remove pi-tui
+
+**C1.** Delete `packages/harness/src/modes/interactive/` (17,415 lines, 41 pi-tui files) and the three
+excluded harness tests that depend on pi-tui test helpers. Mechanical once nothing imports it.
+
+**C2.** The 19 pi-tui importers outside `modes/interactive`, in rough order of difficulty:
+
+- **Core tools render through pi-tui.** `bash`, `read`, `write`, `edit`, `grep`, `ls`, `find`, and
+  `render-utils` build `Text`/`Container` objects as display output, which `map-to-contract.ts` then flattens
+  back to strings. Making the tools emit structured data removes that translation and unblocks a web client.
+  This is the first place Rocky genuinely diverges from Pi rather than deleting from it — worth pulling
+  forward ahead of phase A's tool-display UI so that UI is built once.
+- **Keybindings.** `core/keybindings.ts` wraps pi-tui's `TUI_KEYBINDINGS` and `KeybindingsManager`.
+- **The extension UI API.** `core/extensions/types.ts` types roughly ten signatures against pi-tui's `TUI`,
+  `OverlayHandle`, and `EditorComponent`. Whatever replaces them defines what a Rocky extension can draw —
+  a design decision, not a port.
+- **Pre-session CLI pickers.** `cli/startup-ui`, `config-selector`, `session-picker`, `list-models`.
+- **Two type imports** in `core/settings-manager.ts`.
+
+## Longer term
+
+See [`project-idea-outline.md`](project-idea-outline.md): multi-subagent experimentation (isolated
+workspaces, pinned factors, repeatable scoring) once baseline behavior is stable. That work is also the most
+likely trigger for forking `pi-agent-core`, whose agent loop is about 1,200 of its 8,500 lines — small enough
+that forking late stays cheap, so it waits for a concrete need. A process/RPC boundary waits for one too (web
+client, remote execution, daemon, sandbox isolation).
 
 ## Carried debt
 
+- **The two entry points diverge before the session.** `rocky` runs `harness.main()`, which calls
+  `configureHttpDispatcher()` and sets `AI_AGENT`, `PI_CODING_AGENT`, `ROCKY_CODING_AGENT`, and
+  `process.title`. `src/client-host/create-session-port.ts` constructs the session directly and does none of
+  it, so the client has no HTTP idle timeout or proxy agent and its bash subprocesses see a different
+  environment. Below `createAgentSessionServices` the two are identical.
 - **Undici dispatcher settings do not apply under Bun.** `configureHttpDispatcher()` returns early when
-  `process.versions.bun` is set, so the socket-level HTTP idle timeout and undici's `EnvHttpProxyAgent` are
-  not installed. Per-request timeouts still reach the provider SDK through `sdk.ts`, and Bun's native fetch
-  reads `HTTP(S)_PROXY` itself, so the practical gap is narrow — but proxied requests under Bun have not been
-  exercised. Revisit when Bun becomes the default runtime.
+  `process.versions.bun` is set. Per-request timeouts still reach the provider SDK through `sdk.ts`, and
+  Bun's native fetch reads `HTTP(S)_PROXY` itself, so the practical gap is narrow — but proxied requests
+  under Bun have not been exercised. Note this is separate from the entry-point gap above: the client path
+  skips the call entirely, on either runtime.
+- **The client cannot resolve project trust interactively.** A headless host has no UI to prompt with, so an
+  undecided project resolves to untrusted. Phase A needs a trust prompt in the client.
 - **Model calls are unreachable from the test suite by policy**, which is what let the `EEXIST` session-flush
-  bug reach every turn undetected: no test may make a model call, and nothing else creates a session file.
-  The contract adapter narrows this (its mapping functions are pure and fully tested), but a scripted live
-  smoke against a real provider remains manual.
+  bug reach every turn undetected. The contract adapter narrows this — its mapping functions are pure and
+  fully tested — but a scripted live smoke against a real provider remains manual.
 - **3 harness test files excluded** (`custom-editor-history-keybindings`, `interactive-tui`,
   `interactive-mode-status`): they import pi-tui's `VirtualTerminal`/`test-themes` helpers, which the npm
-  package does not ship. Vendor those helpers into `packages/harness/test/` to recover them — or drop the
-  tests with `modes/interactive` when the OpenTUI client replaces the inherited TUI.
-- **Toolchain still npm/Node** — intentional until step 3; the `rocky` bin shebang is `node`, CI runs Node 24.
-  Bun-run is validated by smoke, by the live streaming/abort/steer checks, and by a live contract round-trip,
-  but is not the default.
+  package does not ship. They go away with `modes/interactive` in phase C1.
+- **Toolchain still npm/Node** — intentional until phase B; the `rocky` bin shebang is `node`, CI runs Node
+  24. Bun-run is validated by smoke, by the live streaming/abort/steer checks, and by a live contract
+  round-trip, but is not the default.
 - **Harness `docs/` and `examples/` are upstream's** — still pi-worded; functionally accurate for inherited
-  behavior (the system prompt points the model at them for app questions). Reword or replace incrementally as
-  the corresponding behavior becomes Rocky-owned.
+  behavior (the system prompt points the model at them for app questions). Reword incrementally as the
+  corresponding behavior becomes Rocky-owned.
 - **Kept-compat surfaces** (documented, revisit when they get in the way): `PI_*` env controls
   (`PI_OFFLINE`, `PI_TELEMETRY`, `PI_SESSION_*`, …), upstream extension virtual-import specifiers, the
   `pi.dev` model-catalog overlay (model updates depend on it until Rocky ships its own catalog), the `pi.dev`
   share-viewer default (`PI_SHARE_VIEWER_URL` overrides), and upstream repo links in the vendored changelog.
 - **Packaging/publish story deferred** — `pack:check` was dropped from the gate; the workspace layout has no
-  installable-artifact validation. Decide packaging (npm workspaces publish vs Bun-era distribution) during
-  step 3.
+  installable-artifact validation. Decide packaging during phase B.
 - **Upstream cherry-picks are manual** — the harness no longer receives upstream updates; watch
   `earendil-works/pi` for security-relevant fixes and cherry-pick by hand. Upstream `pi-ai`/`pi-agent-core`
   upgrades remain normal pinned-dependency bumps and require rerunning both suites.
