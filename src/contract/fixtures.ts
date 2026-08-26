@@ -7,6 +7,7 @@ import type {
   CommandResult,
   MessageDelta,
   ModelRef,
+  ProviderAuth,
   SessionCommand,
   SessionEntrySummary,
   SessionEvent,
@@ -120,6 +121,20 @@ export const FIXTURE_STATS: SessionStats = {
   contextWindow: 400_000,
 };
 
+export const FIXTURE_PROVIDERS: ProviderAuth[] = [
+  {
+    id: "anthropic",
+    name: "Anthropic",
+    methods: ["oauth", "api_key"],
+    authenticated: true,
+    source: "stored",
+    subscription: true,
+  },
+  { id: "openai-codex", name: "OpenAI Codex", methods: ["oauth"], authenticated: false },
+  // Credentials only from the environment: authenticated, but nothing to log in to.
+  { id: "groq", name: "Groq", methods: [], authenticated: true, source: "environment" },
+];
+
 export const FIXTURE_THEME: ThemeSnapshot = {
   name: "dark",
   colors: { text: "#e5e5e7", muted: "#7a7a7a", accent: "#7aa2f7", error: "#f7768e" },
@@ -161,6 +176,10 @@ export const FIXTURE_COMMANDS: SessionCommand[] = [
   { id: "c28", type: "get_themes" },
   { id: "c29", type: "get_theme" },
   { id: "c30", type: "set_theme", name: "light" },
+  { id: "c31", type: "get_providers" },
+  { id: "c32", type: "login", provider: "anthropic", method: "oauth" },
+  { id: "c33", type: "logout", provider: "anthropic" },
+  { id: "c34", type: "auth_reply", requestId: "auth-1", value: "sk-…" },
 ];
 
 export const FIXTURE_EVENTS: SessionEvent[] = [
@@ -216,6 +235,37 @@ export const FIXTURE_EVENTS: SessionEvent[] = [
   { type: "retry_end", success: true, attempt: 1 },
   { type: "state_changed", state: FIXTURE_STATE },
   { type: "theme_changed", theme: FIXTURE_THEME },
+  {
+    type: "auth_request",
+    requestId: "auth-1",
+    kind: "select",
+    message: "How would you like to sign in?",
+    options: [
+      { id: "browser", label: "Browser login (default)" },
+      { id: "device_code", label: "Device code login (headless)" },
+    ],
+  },
+  { type: "auth_request_cancelled", requestId: "auth-1" },
+  {
+    type: "auth_notice",
+    kind: "auth_url",
+    url: "https://example.test/authorize?code=1",
+    instructions: "Open this and paste the redirect back",
+  },
+  {
+    type: "auth_notice",
+    kind: "device_code",
+    userCode: "WXYZ-1234",
+    verificationUri: "https://example.test/device",
+  },
+  { type: "auth_notice", kind: "progress", message: "Enabling models…" },
+  {
+    type: "auth_notice",
+    kind: "info",
+    message: "Signed in",
+    links: [{ label: "docs", url: "https://x.test" }],
+  },
+  { type: "auth_end", provider: "anthropic", ok: true },
   { type: "session_switched", state: FIXTURE_STATE },
   { type: "session_name_changed", name: "renamed" },
   { type: "error", message: "provider rejected the request" },
@@ -258,6 +308,7 @@ export const FIXTURE_COMMAND_RESULTS: CommandResult[] = [
     active: "dark",
   },
   { type: "command_result", id: "c29", command: "get_theme", ok: true, theme: FIXTURE_THEME },
+  { type: "command_result", id: "c31", command: "get_providers", ok: true, providers: FIXTURE_PROVIDERS },
   {
     type: "command_result",
     id: "c22",

@@ -46,6 +46,8 @@ export const CLIENT_COMMANDS: readonly CommandEntry[] = [
   { name: "theme", description: "Switch the colour theme", origin: "client" },
   { name: "thinking", description: "Set how much the model reasons", origin: "client" },
   { name: "keys", description: "Show what the keys do", origin: "client" },
+  { name: "login", description: "Sign in to a model provider", origin: "client" },
+  { name: "logout", description: "Remove a stored provider credential", origin: "client" },
 ];
 
 /**

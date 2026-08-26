@@ -23,6 +23,65 @@ import {
 } from "../runtime/pi-runtime.js";
 import { collectSlashCommands, type SlashCommandSources } from "./collect-slash-commands.js";
 
+/** The slice of the model runtime provider listing needs. Structural, so it is testable. */
+export interface ProviderDirectorySources {
+  readonly modelRuntime?: {
+    getProviders(): readonly {
+      id: string;
+      name?: string;
+      auth?: {
+        oauth?: { name?: string; loginLabel?: string; isSubscription?: boolean };
+        apiKey?: { name?: string; login?: unknown };
+      };
+    }[];
+    getProviderAuthStatus(id: string): { configured?: boolean; source?: string };
+  };
+}
+
+/**
+ * Describe every provider and how it can be logged into.
+ *
+ * The method list is derived from `provider.auth`, the way the inherited TUI's
+ * own login selector does it — there is no static table to read. A provider
+ * whose `apiKey` has no `login` is credential-from-the-environment only: it can
+ * be authenticated but never logged into, so it reports no methods rather than
+ * offering one that would fail.
+ */
+export function describeProviders(session: ProviderDirectorySources): Record<string, unknown>[] {
+  const runtime = session.modelRuntime;
+  if (!runtime) {
+    return [];
+  }
+  const described: Record<string, unknown>[] = [];
+  for (const provider of runtime.getProviders()) {
+    const methods: string[] = [];
+    if (provider.auth?.oauth) {
+      methods.push("oauth");
+    }
+    if (provider.auth?.apiKey?.login) {
+      methods.push("api_key");
+    }
+    let status: { configured?: boolean; source?: string } = {};
+    try {
+      status = runtime.getProviderAuthStatus(provider.id) ?? {};
+    } catch {
+      // A provider that cannot report its status is still worth listing.
+    }
+    described.push({
+      id: provider.id,
+      name: provider.name ?? provider.id,
+      methods,
+      authenticated: status.configured ?? false,
+      ...(status.source !== undefined ? { source: status.source } : {}),
+      ...(provider.auth?.oauth?.isSubscription ? { subscription: true } : {}),
+      ...(provider.auth?.oauth?.loginLabel !== undefined
+        ? { loginLabel: provider.auth.oauth.loginLabel }
+        : {}),
+    });
+  }
+  return described;
+}
+
 export interface CreateSessionPortOptions {
   cwd?: string;
 }
@@ -252,6 +311,27 @@ export async function createRockySessionPort(
           (model) => model.provider === provider && model.id === modelId,
         ),
       sessions: lifecycle,
+      // Authentication lives on the model runtime, not on the session, and the
+      // harness's own login is already headless: it drives everything through
+      // the `prompt`/`notify` callbacks the adapter supplies. The pi-tui login
+      // dialog is only one implementation of those two callbacks.
+      auth: {
+        list: () => describeProviders(liveSession() as never),
+        login: async (provider, method, interaction) => {
+          await (
+            liveSession() as {
+              modelRuntime: {
+                login(id: string, type: string, interaction: unknown): Promise<unknown>;
+              };
+            }
+          ).modelRuntime.login(provider, method, interaction);
+        },
+        logout: async (provider) => {
+          await (
+            liveSession() as { modelRuntime: { logout(id: string): Promise<void> } }
+          ).modelRuntime.logout(provider);
+        },
+      },
       // Themes come from the core's settings, so a change here is a change for
       // `rocky` too — one theme choice, not one per front end.
       themes: {

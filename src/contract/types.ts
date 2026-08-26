@@ -192,6 +192,54 @@ export interface BashResult {
 }
 
 // ============================================================================
+// Authentication
+// ============================================================================
+
+/** How a provider can be logged into. */
+export type AuthMethod = "oauth" | "api_key";
+
+/** Where a configured credential came from. */
+export type AuthSource =
+  | "stored"
+  | "runtime"
+  | "environment"
+  | "fallback"
+  | "models_json_key"
+  | "models_json_command";
+
+/** A provider, and whether it can be used. */
+export interface ProviderAuth {
+  id: string;
+  name: string;
+  /** Empty when the provider takes credentials only from the environment. */
+  methods: AuthMethod[];
+  authenticated: boolean;
+  source?: AuthSource;
+  /** OAuth against a paid subscription rather than metered API access. */
+  subscription?: boolean;
+  /** What the provider calls its own OAuth flow, when it says. */
+  loginLabel?: string;
+}
+
+/**
+ * Something the core needs from the user to finish a login.
+ *
+ * A login is a conversation, not a call: an OAuth flow has to show a URL or a
+ * device code and then wait, and an API-key login has to ask for the key. The
+ * request/reply pair with a correlation id is deliberately the same shape the
+ * harness already uses for extension UI over RPC
+ * (`RpcExtensionUIRequest`/`RpcExtensionUIResponse`) rather than a new
+ * invention — it is the shape that survives a transport.
+ */
+export type AuthRequestKind = "text" | "secret" | "select" | "manual_code";
+
+export interface AuthSelectOption {
+  id: string;
+  label: string;
+  description?: string;
+}
+
+// ============================================================================
 // Theme
 // ============================================================================
 
@@ -384,6 +432,27 @@ export type SessionCommand =
    * that is harder to update incrementally.
    */
   | { id?: string | undefined; type: "get_entries"; since?: string }
+  | { id?: string | undefined; type: "get_providers" }
+  /**
+   * Begin a login. Resolves when it finishes, which may be after several
+   * `auth_request` round trips.
+   */
+  | { id?: string | undefined; type: "login"; provider: string; method: AuthMethod }
+  | { id?: string | undefined; type: "logout"; provider: string }
+  /**
+   * Answer an `auth_request`.
+   *
+   * `cancelled` abandons the login. A request can also be withdrawn by the
+   * core — see `auth_request_cancelled` — so a reply to an id the core has
+   * forgotten is ignored rather than being an error.
+   */
+  | {
+      id?: string | undefined;
+      type: "auth_reply";
+      requestId: string;
+      value?: string;
+      cancelled?: boolean;
+    }
   | { id?: string | undefined; type: "get_themes" }
   | { id?: string | undefined; type: "get_theme" }
   | { id?: string | undefined; type: "set_theme"; name: string }
@@ -462,6 +531,13 @@ export type CommandResult =
   | {
       type: "command_result";
       id?: string | undefined;
+      command: "get_providers";
+      ok: true;
+      providers: ProviderAuth[];
+    }
+  | {
+      type: "command_result";
+      id?: string | undefined;
       command: "get_themes";
       ok: true;
       themes: string[];
@@ -504,6 +580,7 @@ export type CommandResult =
         | "get_entries"
         | "get_themes"
         | "get_theme"
+        | "get_providers"
       >;
       ok: true;
     }
@@ -593,6 +670,42 @@ export type SessionEvent =
    * also be switched by an extension, with no command to attribute it to.
    */
   | { type: "session_switched"; state: SessionState }
+  // Authentication
+  /**
+   * The core is asking for something before it can finish a login.
+   *
+   * A client must answer with `auth_reply` carrying the same `requestId`, or
+   * the login stays open until it is cancelled.
+   */
+  | {
+      type: "auth_request";
+      requestId: string;
+      kind: AuthRequestKind;
+      message: string;
+      placeholder?: string;
+      /** Present when `kind` is `"select"`; reply with an option's `id`. */
+      options?: AuthSelectOption[];
+    }
+  /**
+   * A request the core no longer needs.
+   *
+   * Real: several OAuth flows show a URL and simultaneously offer to take a
+   * pasted redirect, then race a local callback server against it. When the
+   * server wins, the paste prompt has to disappear on its own.
+   */
+  | { type: "auth_request_cancelled"; requestId: string }
+  /** Progress a client should display: a URL to open, a device code, a status. */
+  | {
+      type: "auth_notice";
+      kind: "info" | "auth_url" | "device_code" | "progress";
+      message?: string;
+      url?: string;
+      instructions?: string;
+      userCode?: string;
+      verificationUri?: string;
+      links?: { label: string; url: string }[];
+    }
+  | { type: "auth_end"; provider: string; ok: boolean; error?: string }
   /** The active theme changed, here or in another client sharing the setting. */
   | { type: "theme_changed"; theme: ThemeSnapshot }
   | { type: "state_changed"; state: SessionState }

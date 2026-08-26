@@ -16,6 +16,7 @@ import type {
   ThinkingLevel,
 } from "@rocky/contract";
 import { createEffect, createMemo, createSignal, For, Show } from "solid-js";
+import { loginOptions, logoutOptions } from "./model/auth.js";
 import { mergeCommands, parseBashPrefix, routeSubmission } from "./model/commands.js";
 import {
   applyCompletion,
@@ -61,7 +62,7 @@ export function App(props: { port: SessionPort; onQuit?: (() => void) | undefine
   // One signal rather than a flag per overlay: two booleans can disagree, and
   // "which overlay is open" is a single fact.
   const [overlay, setOverlay] = createSignal<
-    "model" | "session" | "fork" | "theme" | "thinking" | "settings" | "keys" | undefined
+    "model" | "session" | "fork" | "theme" | "thinking" | "settings" | "keys" | "login" | "logout" | undefined
   >(undefined);
   const [picked, setPicked] = createSignal(0);
   // Sampled when a picker opens rather than read during render: relative times
@@ -120,6 +121,27 @@ export function App(props: { port: SessionPort; onQuit?: (() => void) | undefine
     overlay() === "fork" ? filterForkPoints(store.forkPoints(), draft()) : [],
   );
 
+  const pickerLogins = createMemo(() =>
+    overlay() === "login"
+      ? loginOptions(store.providers()).filter((option) =>
+          option.label.toLowerCase().includes(draft().trim().toLowerCase()),
+        )
+      : [],
+  );
+
+  const pickerLogouts = createMemo(() =>
+    overlay() === "logout"
+      ? logoutOptions(store.providers()).filter((provider) =>
+          provider.name.toLowerCase().includes(draft().trim().toLowerCase()),
+        )
+      : [],
+  );
+
+  /** The select list a login is currently asking the user to choose from. */
+  const authChoices = createMemo(() =>
+    store.auth().request?.kind === "select" ? (store.auth().request?.options ?? []) : [],
+  );
+
   const pickerThemes = createMemo(() =>
     overlay() === "theme" ? filterNames(store.themeNames(), draft()) : [],
   );
@@ -142,11 +164,15 @@ export function App(props: { port: SessionPort; onQuit?: (() => void) | undefine
             ? pickerThemes().length
             : overlay() === "thinking"
               ? pickerThinking().length
-              : 0;
+              : overlay() === "login"
+                ? pickerLogins().length
+                : overlay() === "logout"
+                  ? pickerLogouts().length
+                  : authChoices().length;
 
   createEffect(() => setPicked((current) => clampSelection(current, pickerLength())));
 
-  const openPicker = (kind: "model" | "session" | "fork" | "theme" | "thinking" | "settings" | "keys") => {
+  const openPicker = (kind: Exclude<ReturnType<typeof overlay>, undefined>) => {
     showInInput("");
     setPicked(0);
     setNow(Date.now());
@@ -160,6 +186,8 @@ export function App(props: { port: SessionPort; onQuit?: (() => void) | undefine
       void store.loadForkPoints();
     } else if (kind === "theme") {
       void store.loadThemes();
+    } else if (kind === "login" || kind === "logout") {
+      void store.loadProviders();
     }
   };
 
@@ -262,10 +290,43 @@ export function App(props: { port: SessionPort; onQuit?: (() => void) | undefine
       case "keys":
         openPicker("keys");
         return;
+      case "login":
+        openPicker("login");
+        return;
+      case "logout":
+        openPicker("logout");
+        return;
     }
   };
 
+  /**
+   * Answer whatever the login is waiting for.
+   *
+   * A `select` is answered from the highlighted row; everything else is
+   * answered with what was typed, which is why the prompt takes over the input
+   * rather than opening a field of its own.
+   */
+  const answerAuthPrompt = (text: string): boolean => {
+    const request = store.auth().request;
+    if (!request) {
+      return false;
+    }
+    if (request.kind === "select") {
+      const option = authChoices()[picked()];
+      if (option) {
+        void store.answerAuth(request.requestId, option.id);
+      }
+      return true;
+    }
+    showInInput("");
+    void store.answerAuth(request.requestId, text);
+    return true;
+  };
+
   const submit = (text: string) => {
+    if (answerAuthPrompt(text)) {
+      return;
+    }
     if (overlay() === "model") {
       chooseModel(pickerModels()[picked()]);
       return;
@@ -292,6 +353,25 @@ export function App(props: { port: SessionPort; onQuit?: (() => void) | undefine
         void store.setThinkingLevel(level as ThinkingLevel);
       }
       closeOverlay();
+      return;
+    }
+    if (overlay() === "login") {
+      const option = pickerLogins()[picked()];
+      setOverlay(undefined);
+      showInInput("");
+      if (option) {
+        // Not awaited: the command resolves only when the whole login does, and
+        // the UI has to keep rendering the prompts it asks for meanwhile.
+        void store.login(option.provider, option.method);
+      }
+      return;
+    }
+    if (overlay() === "logout") {
+      const provider = pickerLogouts()[picked()];
+      closeOverlay();
+      if (provider) {
+        void store.logout(provider.id);
+      }
       return;
     }
     // `/settings` and `/keys` are read-only screens; Enter just dismisses them.
@@ -354,6 +434,12 @@ export function App(props: { port: SessionPort; onQuit?: (() => void) | undefine
     // (the key parser swallows it as an escape-sequence prefix), so a binding
     // on it would be silently dead.
     if (key.name === "c" && key.ctrl) {
+      // A login in progress is holding the session hostage until it is
+      // answered, so it is cancelled before anything else.
+      if (store.auth().active) {
+        void store.cancelAuth();
+        return;
+      }
       // Closing the overlay comes first. Escape never reaches this handler, so
       // without this precedence the only way out of the picker would be to
       // pick something — or to quit.
@@ -380,7 +466,7 @@ export function App(props: { port: SessionPort; onQuit?: (() => void) | undefine
       return;
     }
     if (key.name === "up" || key.name === "down") {
-      if (overlay() !== undefined) {
+      if (overlay() !== undefined || authChoices().length > 0) {
         setPicked((current) => moveSelection(current, pickerLength(), key.name === "up" ? -1 : 1));
         return;
       }
@@ -548,6 +634,68 @@ export function App(props: { port: SessionPort; onQuit?: (() => void) | undefine
         </box>
       </Show>
 
+      <Show when={overlay() === "login" || overlay() === "logout"}>
+        <box style={{ flexDirection: "column", flexShrink: 0 }}>
+          <text fg={palette().muted}>
+            {overlay() === "login" ? "Sign in to a provider" : "Remove a stored credential"} ↑↓ · enter
+            selects · ctrl+c closes
+          </text>
+          <Show
+            when={(overlay() === "login" ? pickerLogins().length : pickerLogouts().length) > 0}
+            fallback={
+              <text fg={palette().muted}>
+                {"  "}
+                {overlay() === "login" ? "no provider offers a login" : "nothing stored to remove"}
+              </text>
+            }
+          >
+            <Show when={overlay() === "login"}>
+              <For each={pickerLogins()}>
+                {(option, index) => (
+                  <text fg={index() === picked() ? palette().accent : palette().muted}>
+                    {index() === picked() ? "› " : "  "}
+                    {option.authenticated ? "* " : ""}
+                    {option.label}
+                  </text>
+                )}
+              </For>
+            </Show>
+            <Show when={overlay() === "logout"}>
+              <For each={pickerLogouts()}>
+                {(provider, index) => (
+                  <text fg={index() === picked() ? palette().accent : palette().muted}>
+                    {index() === picked() ? "› " : "  "}
+                    {provider.name}
+                  </text>
+                )}
+              </For>
+            </Show>
+          </Show>
+        </box>
+      </Show>
+
+      <Show when={store.auth().active || store.auth().notices.length > 0}>
+        <box style={{ flexDirection: "column", flexShrink: 0 }}>
+          <For each={store.auth().notices}>{(line) => <text fg={palette().muted}>🔑 {line}</text>}</For>
+          <Show when={store.auth().request}>
+            {(request: () => NonNullable<ReturnType<typeof store.auth>["request"]>) => (
+              <box style={{ flexDirection: "column" }}>
+                <text fg={palette().text}>? {request().message}</text>
+                <For each={authChoices()}>
+                  {(option, index) => (
+                    <text fg={index() === picked() ? palette().accent : palette().muted}>
+                      {index() === picked() ? "› " : "  "}
+                      {option.label}
+                      {option.description ? ` — ${option.description}` : ""}
+                    </text>
+                  )}
+                </For>
+              </box>
+            )}
+          </Show>
+        </box>
+      </Show>
+
       <Show when={overlay() === "settings"}>
         <box style={{ flexDirection: "column", flexShrink: 0 }}>
           <text fg={palette().muted}>Settings enter or ctrl+c closes</text>
@@ -679,7 +827,9 @@ export function App(props: { port: SessionPort; onQuit?: (() => void) | undefine
               ? "Filter sessions…"
               : overlay() === "fork"
                 ? "Filter messages…"
-                : "Ask Rocky…   / commands · ! shell · shift+enter newline · ctrl+c aborts, or quits when idle"
+                : store.auth().request && store.auth().request?.kind !== "select"
+                  ? (store.auth().request?.placeholder ?? "Answer, then enter…")
+                  : "Ask Rocky…   / commands · ! shell · shift+enter newline · ctrl+c aborts, or quits when idle"
         }
         // Grows with the draft rather than scrolling a one-row window, and
         // stops at a bound so a long paste cannot swallow the transcript.

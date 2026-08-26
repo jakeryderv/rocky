@@ -1106,6 +1106,192 @@ describe("PiAgentSessionAdapter", () => {
     }
   });
 
+  // The login is a conversation: the core asks, the client answers, and the
+  // command resolves only when the whole flow finishes.
+  it("turns a login prompt into an event and waits for the reply", async () => {
+    const { session } = fakeSession();
+    let answered: string | undefined;
+    const adapter = new PiAgentSessionAdapter(session, {
+      cwd: "/work",
+      auth: {
+        list: () => [],
+        logout: async () => {},
+        login: async (_provider, _method, interaction) => {
+          interaction.notify({ type: "device_code", userCode: "WXYZ", verificationUri: "https://x.test" });
+          answered = await interaction.prompt({ type: "secret", message: "Enter Anthropic API key" });
+        },
+      },
+    });
+    const seen: SessionEvent[] = [];
+    adapter.start();
+    adapter.subscribe((event) => seen.push(event));
+
+    const login = adapter.execute({ id: "l1", type: "login", provider: "anthropic", method: "api_key" });
+    await Promise.resolve();
+
+    const request = seen.find((event) => event.type === "auth_request");
+    expect(request).toEqual({
+      type: "auth_request",
+      requestId: "auth-1",
+      kind: "secret",
+      message: "Enter Anthropic API key",
+    });
+    expect(seen).toContainEqual({
+      type: "auth_notice",
+      kind: "device_code",
+      userCode: "WXYZ",
+      verificationUri: "https://x.test",
+    });
+
+    await adapter.execute({ type: "auth_reply", requestId: "auth-1", value: "sk-test" });
+    expect(await login).toEqual({ type: "command_result", id: "l1", command: "login", ok: true });
+    expect(answered).toBe("sk-test");
+    expect(seen).toContainEqual({ type: "auth_end", provider: "anthropic", ok: true });
+  });
+
+  it("reports a failed login on the result and as an event", async () => {
+    const { session } = fakeSession();
+    const adapter = new PiAgentSessionAdapter(session, {
+      cwd: "/work",
+      auth: {
+        list: () => [],
+        logout: async () => {},
+        login: async () => {
+          throw new Error("device code expired");
+        },
+      },
+    });
+    const seen: SessionEvent[] = [];
+    adapter.start();
+    adapter.subscribe((event) => seen.push(event));
+
+    expect(await adapter.execute({ type: "login", provider: "xai", method: "oauth" })).toEqual({
+      type: "command_result",
+      id: undefined,
+      command: "login",
+      ok: false,
+      error: "device code expired",
+    });
+    // Announced too: another client watching the session has to stop showing
+    // the login it was rendering.
+    expect(seen).toContainEqual({
+      type: "auth_end",
+      provider: "xai",
+      ok: false,
+      error: "device code expired",
+    });
+  });
+
+  // Several OAuth flows race a pasted redirect against a local callback
+  // server, and withdraw the paste prompt when the server wins.
+  it("tells the client when the flow withdraws a prompt", async () => {
+    const { session } = fakeSession();
+    const controller = new AbortController();
+    const adapter = new PiAgentSessionAdapter(session, {
+      cwd: "/work",
+      auth: {
+        list: () => [],
+        logout: async () => {},
+        login: async (_provider, _method, interaction) => {
+          const pasted = interaction
+            .prompt({ type: "manual_code", message: "Paste the redirect", signal: controller.signal })
+            .catch(() => "");
+          controller.abort();
+          await pasted;
+        },
+      },
+    });
+    const seen: SessionEvent[] = [];
+    adapter.start();
+    adapter.subscribe((event) => seen.push(event));
+
+    await adapter.execute({ type: "login", provider: "anthropic", method: "oauth" });
+    expect(seen).toContainEqual({ type: "auth_request_cancelled", requestId: "auth-1" });
+  });
+
+  it("leaves nothing waiting once a login ends", async () => {
+    const { session } = fakeSession();
+    let release!: () => void;
+    const adapter = new PiAgentSessionAdapter(session, {
+      cwd: "/work",
+      auth: {
+        list: () => [],
+        logout: async () => {},
+        login: async (_provider, _method, interaction) => {
+          void interaction.prompt({ type: "text", message: "never answered" }).catch(() => {});
+          await new Promise<void>((resolve) => {
+            release = resolve;
+          });
+        },
+      },
+    });
+    const seen: SessionEvent[] = [];
+    adapter.start();
+    adapter.subscribe((event) => seen.push(event));
+
+    const login = adapter.execute({ type: "login", provider: "anthropic", method: "oauth" });
+    await Promise.resolve();
+    release();
+    await login;
+
+    expect(seen.filter((event) => event.type === "auth_request_cancelled")).toHaveLength(1);
+  });
+
+  // The core withdraws requests on its own, so a reply and a withdrawal can
+  // cross on the wire.
+  it("ignores a reply to a request it has forgotten", async () => {
+    const { session } = fakeSession();
+    const adapter = new PiAgentSessionAdapter(session, {
+      cwd: "/work",
+      auth: { list: () => [], logout: async () => {}, login: async () => {} },
+    });
+    expect(await adapter.execute({ type: "auth_reply", requestId: "gone", value: "x" })).toEqual({
+      type: "command_result",
+      id: undefined,
+      command: "auth_reply",
+      ok: true,
+    });
+  });
+
+  it("lists providers, dropping methods the contract does not model", async () => {
+    const { session } = fakeSession();
+    const adapter = new PiAgentSessionAdapter(session, {
+      cwd: "/work",
+      auth: {
+        logout: async () => {},
+        login: async () => {},
+        list: () => [
+          {
+            id: "anthropic",
+            name: "Anthropic",
+            methods: ["oauth", "api_key", "smoke-signal"],
+            authenticated: true,
+            source: "stored",
+            subscription: true,
+          },
+          { id: "groq", methods: [], authenticated: true, source: "not-a-source" },
+        ],
+      },
+    });
+    expect(await adapter.execute({ type: "get_providers" })).toEqual({
+      type: "command_result",
+      id: undefined,
+      command: "get_providers",
+      ok: true,
+      providers: [
+        {
+          id: "anthropic",
+          name: "Anthropic",
+          methods: ["oauth", "api_key"],
+          authenticated: true,
+          source: "stored",
+          subscription: true,
+        },
+        { id: "groq", name: "groq", methods: [], authenticated: true },
+      ],
+    });
+  });
+
   it("keeps every command result JSON-serializable", async () => {
     const { session } = fakeSession();
     const adapter = new PiAgentSessionAdapter(session, {
