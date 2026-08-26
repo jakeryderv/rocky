@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- `npm run client` builds first and launches through `scripts/client.mjs`, which reports a missing Bun or a
+  non-interactive terminal instead of hanging silently or surfacing an unhandled rejection.
+
 - **Fix: the client could not be exited.** `exitOnCtrlC` was disabled with a comment saying the host handled
   Ctrl+C; the host handled nothing, so there was no quit path at all. Ctrl+C now aborts a running turn and
   quits when idle, disposing the session and destroying the renderer so the terminal is left usable; the host

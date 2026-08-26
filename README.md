@@ -30,6 +30,21 @@ rocky --offline
 To use a model, configure a provider credential through `rocky`'s `/login` flow or the provider's documented
 environment variable. Never put credentials in project-local `<cwd>/.rocky/`.
 
+## Trying the new client (preview)
+
+Rocky's own terminal client (OpenTUI + Solid) is early but usable. It requires Bun, because OpenTUI's native
+renderer has no FFI backend on Node 24:
+
+```bash
+npm run client        # builds, then launches under Bun
+```
+
+Keys: `Enter` submits, `↑`/`↓` walk prompt history, `Ctrl+C` aborts a running turn and quits when idle. A
+multi-line paste is held aside and submitted as one prompt.
+
+The default `rocky` command still runs the inherited interactive TUI; the new client replaces it once it covers
+daily use. See [`docs/roadmap.md`](docs/roadmap.md).
+
 ## Configuration at a glance
 
 | Scope | Default |
