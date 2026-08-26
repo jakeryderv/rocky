@@ -219,6 +219,65 @@ export interface SessionSummary {
   parentId?: string;
 }
 
+/** What a session entry is, reduced to the kinds a client can render. */
+export type SessionEntryKind =
+  | "message"
+  | "model_change"
+  | "thinking_level_change"
+  | "compaction"
+  | "branch_summary"
+  | "label"
+  | "session_info"
+  | "custom";
+
+/**
+ * One entry in a session's history, as a tree view or fork picker needs it.
+ *
+ * A projection, not the harness's nine-variant `SessionEntry` union: a client
+ * navigating history needs identity, shape, order and something readable, and
+ * the union's payloads are the message, compaction and extension internals it
+ * does not. Promoting a payload here is cheap once something needs it.
+ *
+ * `parentId` is what makes this a tree; a flat list plus parent links is
+ * deliberately used instead of a nested shape, because the contract already
+ * addresses entries by id everywhere else and a nested payload would carry the
+ * same information in a form that is harder to update in place.
+ */
+export interface SessionEntrySummary {
+  id: string;
+  parentId?: string;
+  kind: SessionEntryKind;
+  /** Present when `kind` is `"message"`. */
+  role?: "user" | "assistant" | "tool_result" | "bash";
+  /** One line, already collapsed and truncated. */
+  preview: string;
+  /** Epoch milliseconds. */
+  timestamp: number;
+  /** A user-set bookmark on this entry. */
+  label?: string;
+}
+
+/** A point a session can be forked from. */
+export interface ForkPoint {
+  entryId: string;
+  text: string;
+}
+
+/** What a session has cost so far. Totals span history that was compacted away. */
+export interface SessionStats {
+  sessionId: string;
+  userMessages: number;
+  assistantMessages: number;
+  toolCalls: number;
+  toolResults: number;
+  totalMessages: number;
+  tokens: { input: number; output: number; cacheRead: number; cacheWrite: number; total: number };
+  cost: number;
+  /** Estimated tokens currently in context, when the core can estimate them. */
+  contextTokens?: number;
+  contextWindow?: number;
+}
+
 // ============================================================================
 // State
 // ============================================================================
@@ -276,6 +335,37 @@ export type SessionCommand =
    */
   | { id?: string | undefined; type: "bash"; command: string; excludeFromContext?: boolean }
   | { id?: string | undefined; type: "abort_bash" }
+  /**
+   * Write the conversation out as a standalone HTML file.
+   *
+   * The result is a path on the machine running the core. That is the one place
+   * the contract carries a filesystem path, and it is deliberate: the artifact
+   * *is* a file, and "where did it go" is the answer a client needs. A client
+   * that does not share the core's filesystem should treat it as informational.
+   */
+  | { id?: string | undefined; type: "export_html"; outputPath?: string }
+  /**
+   * Continue the session from an earlier entry.
+   *
+   * `"before"` reopens the user message at `entryId` for editing and returns its
+   * text; `"at"` keeps it and continues from just after. Defaults to `"before"`,
+   * which is what "fork from here" usually means.
+   */
+  | { id?: string | undefined; type: "fork"; entryId: string; position?: "before" | "at" }
+  /** Fork at the current leaf: a copy of the session as it stands. */
+  | { id?: string | undefined; type: "clone" }
+  | { id?: string | undefined; type: "get_fork_points" }
+  | { id?: string | undefined; type: "set_session_name"; name: string }
+  | { id?: string | undefined; type: "get_session_stats" }
+  /**
+   * Read the session's history.
+   *
+   * `since` returns only what follows that entry, for a client keeping a view
+   * up to date. There is no separate `get_tree`: `parentId` on each summary is
+   * the tree, and a nested payload would be the same information in a shape
+   * that is harder to update incrementally.
+   */
+  | { id?: string | undefined; type: "get_entries"; since?: string }
   | { id?: string | undefined; type: "set_thinking_level"; level: ThinkingLevel }
   | { id?: string | undefined; type: "set_steering_mode"; mode: QueueMode }
   | { id?: string | undefined; type: "set_follow_up_mode"; mode: QueueMode }
@@ -320,6 +410,43 @@ export type CommandResult =
       sessions: SessionSummary[];
     }
   | { type: "command_result"; id?: string | undefined; command: "bash"; ok: true; result: BashResult }
+  | { type: "command_result"; id?: string | undefined; command: "export_html"; ok: true; path: string }
+  /**
+   * `cancelled` is true when an extension vetoed the fork. The session is then
+   * untouched, and no `session_switched` event follows.
+   */
+  | {
+      type: "command_result";
+      id?: string | undefined;
+      command: "fork";
+      ok: true;
+      cancelled: boolean;
+      /** The forked-from message, when `position` was `"before"`. */
+      text?: string;
+    }
+  | {
+      type: "command_result";
+      id?: string | undefined;
+      command: "get_fork_points";
+      ok: true;
+      points: ForkPoint[];
+    }
+  | {
+      type: "command_result";
+      id?: string | undefined;
+      command: "get_session_stats";
+      ok: true;
+      stats: SessionStats;
+    }
+  | {
+      type: "command_result";
+      id?: string | undefined;
+      command: "get_entries";
+      ok: true;
+      entries: SessionEntrySummary[];
+      /** The entry the session is currently continuing from. */
+      leafId?: string;
+    }
   /**
    * Acknowledgement for commands that return no payload.
    *
@@ -340,6 +467,11 @@ export type CommandResult =
         | "get_commands"
         | "list_sessions"
         | "bash"
+        | "export_html"
+        | "fork"
+        | "get_fork_points"
+        | "get_session_stats"
+        | "get_entries"
       >;
       ok: true;
     }

@@ -9,6 +9,7 @@
 import type {
   BashResult,
   CommandResult,
+  ForkPoint,
   ModelRef,
   SessionCommand,
   SessionEvent,
@@ -18,10 +19,12 @@ import type {
   SlashCommand,
 } from "../contract/index.js";
 import {
+  flattenSessionTree,
   indexSessionsByPath,
   toModelRef,
   toSessionEvent,
   toSessionMessage,
+  toSessionStats,
   toSessionSummary,
   toSlashCommand,
   toThinkingLevel,
@@ -58,6 +61,14 @@ export interface AgentSessionLike {
   setFollowUpMode(mode: "all" | "one-at-a-time"): void;
   setAutoCompactionEnabled(enabled: boolean): void;
   compact(customInstructions?: string): Promise<unknown>;
+  readonly sessionManager?: {
+    getTree(): readonly { entry: Record<string, unknown>; children?: readonly unknown[]; label?: string }[];
+    getLeafId(): string | null;
+  };
+  exportToHtml?(outputPath?: string): Promise<string>;
+  getUserMessagesForForking?(): readonly { entryId: string; text: string }[];
+  getSessionStats?(): Record<string, unknown>;
+  setSessionName?(name: string): void;
   executeBash?(
     command: string,
     onChunk?: (chunk: string) => void,
@@ -108,6 +119,8 @@ export interface SessionLifecycle {
   list(): Promise<readonly Record<string, unknown>[]> | readonly Record<string, unknown>[];
   switchTo(sessionId: string): Promise<{ cancelled: boolean }>;
   create(): Promise<{ cancelled: boolean }>;
+  /** Continue from an earlier entry. Lives on the runtime, not the session. */
+  fork(entryId: string, position: "before" | "at"): Promise<{ cancelled: boolean; selectedText?: string }>;
   current(): AgentSessionLike;
 }
 
@@ -192,6 +205,11 @@ export class PiAgentSessionAdapter {
       this.start();
     }
     this.publishSwitched();
+  }
+
+  /** One shape for "this host cannot do that", so a client has one error path. */
+  private unsupported(id: string | undefined, command: string, what: string): CommandResult {
+    return { type: "command_result", id, command, ok: false, error: `This session cannot ${what}` };
   }
 
   private publishSwitched(): void {
@@ -421,6 +439,89 @@ export class PiAgentSessionAdapter {
         case "abort_bash":
           this.session.abortBash?.();
           return { type: "command_result", id, command: "abort_bash", ok: true };
+        case "export_html": {
+          if (!this.session.exportToHtml) {
+            return this.unsupported(id, "export_html", "export this session");
+          }
+          const path = await this.session.exportToHtml(command.outputPath);
+          return { type: "command_result", id, command: "export_html", ok: true, path };
+        }
+        case "fork":
+        case "clone": {
+          const lifecycle = this.options.sessions;
+          if (!lifecycle) {
+            return this.unsupported(id, command.type, "fork this session");
+          }
+          // A clone is a fork at the leaf, which is what the harness's own RPC
+          // mode does — one code path rather than two that can drift.
+          const leafId = this.session.sessionManager?.getLeafId() ?? undefined;
+          const entryId = command.type === "clone" ? leafId : command.entryId;
+          if (entryId === undefined) {
+            return this.unsupported(id, command.type, "clone a session with no entries");
+          }
+          const position = command.type === "clone" ? "at" : (command.position ?? "before");
+          const result = await lifecycle.fork(entryId, position);
+          if (!result.cancelled) {
+            this.retarget();
+          }
+          if (command.type === "clone") {
+            return { type: "command_result", id, command: "clone", ok: true };
+          }
+          return {
+            type: "command_result",
+            id,
+            command: "fork",
+            ok: true,
+            cancelled: result.cancelled,
+            ...(result.selectedText !== undefined ? { text: result.selectedText } : {}),
+          };
+        }
+        case "get_fork_points": {
+          const points: ForkPoint[] = [];
+          for (const point of this.session.getUserMessagesForForking?.() ?? []) {
+            points.push({ entryId: point.entryId, text: point.text });
+          }
+          return { type: "command_result", id, command: "get_fork_points", ok: true, points };
+        }
+        case "set_session_name":
+          if (!this.session.setSessionName) {
+            return this.unsupported(id, "set_session_name", "name this session");
+          }
+          this.session.setSessionName(command.name);
+          return { type: "command_result", id, command: "set_session_name", ok: true };
+        case "get_session_stats": {
+          if (!this.session.getSessionStats) {
+            return this.unsupported(id, "get_session_stats", "report session statistics");
+          }
+          return {
+            type: "command_result",
+            id,
+            command: "get_session_stats",
+            ok: true,
+            stats: toSessionStats(this.session.getSessionStats() as never),
+          };
+        }
+        case "get_entries": {
+          const manager = this.session.sessionManager;
+          if (!manager) {
+            return this.unsupported(id, "get_entries", "read this session's history");
+          }
+          const all = flattenSessionTree(manager.getTree() as never);
+          // `since` trims to what follows that entry in the same order the
+          // client already has, so an incremental read appends rather than
+          // re-reading the whole history.
+          const from = command.since === undefined ? 0 : all.findIndex((e) => e.id === command.since) + 1;
+          const entries = from > 0 || command.since === undefined ? all.slice(from) : all;
+          const leafId = manager.getLeafId() ?? undefined;
+          return {
+            type: "command_result",
+            id,
+            command: "get_entries",
+            ok: true,
+            entries,
+            ...(leafId !== undefined ? { leafId } : {}),
+          };
+        }
         case "set_model": {
           const model = this.options.lookupModel?.(command.provider, command.modelId);
           if (model === undefined) {

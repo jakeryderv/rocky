@@ -44,6 +44,48 @@ function fakePort() {
           },
         };
       }
+      if (command.type === "get_fork_points") {
+        return {
+          type: "command_result",
+          command: "get_fork_points",
+          ok: true,
+          points: [
+            { entryId: "e1", text: "explain this repo" },
+            { entryId: "e2", text: "why does the build fail" },
+          ],
+        };
+      }
+      if (command.type === "fork") {
+        return {
+          type: "command_result",
+          command: "fork",
+          ok: true,
+          cancelled: false,
+          text: "explain this repo",
+        };
+      }
+      if (command.type === "export_html") {
+        return { type: "command_result", command: "export_html", ok: true, path: "/work/session.html" };
+      }
+      if (command.type === "get_session_stats") {
+        return {
+          type: "command_result",
+          command: "get_session_stats",
+          ok: true,
+          stats: {
+            sessionId: "s1",
+            userMessages: 2,
+            assistantMessages: 2,
+            toolCalls: 1,
+            toolResults: 1,
+            totalMessages: 6,
+            tokens: { input: 100, output: 50, cacheRead: 0, cacheWrite: 0, total: 150 },
+            cost: 0.0042,
+            contextTokens: 75,
+            contextWindow: 300,
+          },
+        };
+      }
       if (command.type === "list_sessions") {
         return {
           type: "command_result",
@@ -916,4 +958,106 @@ test("names only the settings that differ from the default", async () => {
   expect(frame).toContain("auto-compact off");
   expect(frame).toContain("steer one-at-a-time");
   expect(frame).not.toContain("follow-up one-at-a-time");
+});
+
+// "Fork from here" has to mean "edit this and try again": the core returns the
+// message it forked before, and dropping it would leave the user retyping it.
+test("forking puts the forked-from message back in the editor", async () => {
+  const { port, sent } = fakePort();
+  const t = await testRender(() => <App port={port} />, { width: 70, height: 16 });
+  await t.renderOnce();
+
+  await t.mockInput.typeText("/fork");
+  t.mockInput.pressEnter();
+  await t.renderOnce();
+  await t.renderOnce();
+  expect(t.captureCharFrame()).toContain("explain this repo");
+
+  t.mockInput.pressEnter();
+  await t.renderOnce();
+  await t.renderOnce();
+
+  expect(sent.filter((command) => command.type === "fork")).toEqual([
+    { type: "fork", entryId: "e1", position: "before" },
+  ]);
+  const editor = findRenderable(t.renderer as never, "TextareaRenderable") as unknown as {
+    plainText: string;
+  };
+  expect(editor.plainText).toBe("explain this repo");
+});
+
+test("/clone copies the session without opening a picker", async () => {
+  const { port, sent } = fakePort();
+  const t = await testRender(() => <App port={port} />, { width: 70, height: 16 });
+  await t.renderOnce();
+
+  await t.mockInput.typeText("/clone");
+  t.mockInput.pressEnter();
+  await t.renderOnce();
+
+  expect(sent.filter((command) => command.type === "clone")).toHaveLength(1);
+  expect(t.captureCharFrame()).not.toContain("Fork before a message");
+});
+
+test("/export reports where the file went", async () => {
+  const { port, sent } = fakePort();
+  const t = await testRender(() => <App port={port} />, { width: 70, height: 16 });
+  await t.renderOnce();
+
+  await t.mockInput.typeText("/export");
+  t.mockInput.pressEnter();
+  await t.renderOnce();
+  await t.renderOnce();
+
+  expect(sent.filter((command) => command.type === "export_html")).toEqual([{ type: "export_html" }]);
+  expect(t.captureCharFrame()).toContain("/work/session.html");
+});
+
+test("/export takes a path", async () => {
+  const { port, sent } = fakePort();
+  const t = await testRender(() => <App port={port} />, { width: 70, height: 16 });
+  await t.renderOnce();
+
+  await t.mockInput.typeText("/export /tmp/out.html");
+  t.mockInput.pressEnter();
+  await t.renderOnce();
+
+  expect(sent.filter((command) => command.type === "export_html")).toEqual([
+    { type: "export_html", outputPath: "/tmp/out.html" },
+  ]);
+});
+
+test("/name sets the session name, and does nothing without one", async () => {
+  const { port, sent } = fakePort();
+  const t = await testRender(() => <App port={port} />, { width: 70, height: 16 });
+  await t.renderOnce();
+
+  await t.mockInput.typeText("/name");
+  t.mockInput.pressEnter();
+  await t.renderOnce();
+  expect(sent.filter((command) => command.type === "set_session_name")).toEqual([]);
+
+  await t.mockInput.typeText("/name contract work");
+  t.mockInput.pressEnter();
+  await t.renderOnce();
+  expect(sent.filter((command) => command.type === "set_session_name")).toEqual([
+    { type: "set_session_name", name: "contract work" },
+  ]);
+});
+
+test("/stats reports what the session has cost", async () => {
+  const { port } = fakePort();
+  const t = await testRender(() => <App port={port} />, { width: 70, height: 16 });
+  await t.renderOnce();
+
+  await t.mockInput.typeText("/stats");
+  t.mockInput.pressEnter();
+  await t.renderOnce();
+  await t.renderOnce();
+
+  const frame = t.captureCharFrame();
+  expect(frame).toContain("6 messages");
+  expect(frame).toContain("150 tokens");
+  expect(frame).toContain("$0.0042");
+  expect(frame).toContain("25%");
 });

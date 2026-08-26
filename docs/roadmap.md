@@ -43,6 +43,10 @@ other 19 live in `core/` and `cli/` and need real work (see phase C).
 - **First OpenTUI + Solid client slice** (`packages/client`) over a `SessionPort`, with a headless Bun render
   suite, a root-level client smoke, and a separate Bun CI job. See ADR 0005. Scrollback, incremental tool
   output, a working quit path, prompt history, and multi-line paste have since landed.
+- **Export, fork, clone, naming, stats, and history** ([#28](https://github.com/jakeryderv/rocky/issues/28),
+  which absorbed `get_entries`/`get_tree` from #22). History crosses the seam as `SessionEntrySummary`, a
+  projection of the harness's nine-variant `SessionEntry` union: identity, parent, kind, preview, timestamp
+  and resolved label. `get_tree` is deliberately not a second command — `parentId` is the tree.
 - **Compaction and queue UI** ([#26](https://github.com/jakeryderv/rocky/issues/26)). `/compact`,
   `/autocompact`, `/steering` and `/followup`, the queued messages listed above the prompt, and non-default
   queue settings named in the status line. Also fixed typing during a turn, which sent a `prompt` the core
@@ -87,11 +91,7 @@ with it.
    contract is the real answer.
 
 Then, needed but not blocking: settings, theme,
-and keybinding screens ([#27](https://github.com/jakeryderv/rocky/issues/27)); `export_html`, `fork`,
-`clone`, session stats, and the in-session entry/tree navigation `get_entries` and `get_tree` provide
-([#28](https://github.com/jakeryderv/rocky/issues/28) — moved there from #22, because a fork picker or tree
-view is their only consumer, and modelling the nine-variant `SessionEntry` union without one would be
-designing the contract blind).
+and keybinding screens ([#27](https://github.com/jakeryderv/rocky/issues/27)).
 
 ## Phase B — flip the default and move to Bun
 
@@ -138,6 +138,9 @@ client, remote execution, daemon, sandbox isolation).
   Bun's native fetch reads `HTTP(S)_PROXY` itself, so the practical gap is narrow — but proxied requests
   under Bun have not been exercised. Note this is separate from the entry-point gap above: the client path
   skips the call entirely, on either runtime.
+- **`export_html` returns a path on the core's machine**, the one place the contract carries a filesystem
+  path. For the terminal client that is the answer to "where did it go"; a remote client would need the HTML
+  itself, which needs a size story the contract does not have yet.
 - **A session whose directory no longer exists cannot be resumed from the client.** The harness asks for a
   replacement cwd through a UI the headless host does not have, so the switch fails with the harness's error
   instead of prompting. Same root cause as the trust gap below.

@@ -8,8 +8,10 @@ import type {
   MessageDelta,
   ModelRef,
   SessionCommand,
+  SessionEntrySummary,
   SessionEvent,
   SessionState,
+  SessionStats,
   SessionSummary,
   SlashCommand,
   Usage,
@@ -84,6 +86,39 @@ export const FIXTURE_SESSIONS: SessionSummary[] = [
   },
 ];
 
+export const FIXTURE_ENTRIES: SessionEntrySummary[] = [
+  { id: "e1", kind: "message", role: "user", preview: "explain this repo", timestamp: 1_787_700_000_000 },
+  {
+    id: "e2",
+    parentId: "e1",
+    kind: "message",
+    role: "assistant",
+    preview: "Rocky replaces the presentation half…",
+    timestamp: 1_787_700_001_000,
+    label: "the good answer",
+  },
+  {
+    id: "e3",
+    parentId: "e2",
+    kind: "compaction",
+    preview: "summary of the first twelve turns",
+    timestamp: 1_787_700_002_000,
+  },
+];
+
+export const FIXTURE_STATS: SessionStats = {
+  sessionId: "01a03ba3-c8d2-75c2-86d9-56cafcf5d663",
+  userMessages: 2,
+  assistantMessages: 2,
+  toolCalls: 3,
+  toolResults: 3,
+  totalMessages: 7,
+  tokens: { input: 1200, output: 340, cacheRead: 800, cacheWrite: 0, total: 2340 },
+  cost: 0.0047,
+  contextTokens: 2100,
+  contextWindow: 400_000,
+};
+
 export const FIXTURE_COMMANDS: SessionCommand[] = [
   { id: "c1", type: "prompt", text: "explain this repo" },
   {
@@ -110,6 +145,13 @@ export const FIXTURE_COMMANDS: SessionCommand[] = [
   { id: "c18", type: "new_session" },
   { id: "c19", type: "bash", command: "npm run verify", excludeFromContext: true },
   { id: "c20", type: "abort_bash" },
+  { id: "c21", type: "export_html", outputPath: "/home/user/project/session.html" },
+  { id: "c22", type: "fork", entryId: "e1", position: "before" },
+  { id: "c23", type: "clone" },
+  { id: "c24", type: "get_fork_points" },
+  { id: "c25", type: "set_session_name", name: "contract work" },
+  { id: "c26", type: "get_session_stats" },
+  { id: "c27", type: "get_entries", since: "e1" },
 ];
 
 export const FIXTURE_EVENTS: SessionEvent[] = [
@@ -196,6 +238,31 @@ export const FIXTURE_COMMAND_RESULTS: CommandResult[] = [
     commands: FIXTURE_SLASH_COMMANDS,
   },
   { type: "command_result", id: "c16", command: "list_sessions", ok: true, sessions: FIXTURE_SESSIONS },
+  { type: "command_result", id: "c21", command: "export_html", ok: true, path: "/home/user/x.html" },
+  {
+    type: "command_result",
+    id: "c22",
+    command: "fork",
+    ok: true,
+    cancelled: false,
+    text: "explain this repo",
+  },
+  {
+    type: "command_result",
+    id: "c24",
+    command: "get_fork_points",
+    ok: true,
+    points: [{ entryId: "e1", text: "explain this repo" }],
+  },
+  { type: "command_result", id: "c26", command: "get_session_stats", ok: true, stats: FIXTURE_STATS },
+  {
+    type: "command_result",
+    id: "c27",
+    command: "get_entries",
+    ok: true,
+    entries: FIXTURE_ENTRIES,
+    leafId: "e3",
+  },
   {
     type: "command_result",
     id: "c19",

@@ -5,7 +5,7 @@
  * Pure, so the matching rule is covered by the Node suite rather than only by a
  * rendered frame.
  */
-import type { ModelRef } from "@rocky/contract";
+import type { ForkPoint, ModelRef } from "@rocky/contract";
 
 /** How a model reads in the picker and in the status line. */
 export function modelLabel(model: ModelRef): string {
@@ -38,4 +38,46 @@ export function filterModels(models: readonly ModelRef[], query: string): ModelR
 /** True when this model is the one the session is currently using. */
 export function isActiveModel(model: ModelRef, active: ModelRef | undefined): boolean {
   return active !== undefined && model.provider === active.provider && model.id === active.id;
+}
+
+/** Match a fork point on its message text. Every term must match. */
+export function filterForkPoints(points: readonly ForkPoint[], query: string): ForkPoint[] {
+  const terms = query
+    .toLowerCase()
+    .split(/\s+/)
+    .filter((term) => term.length > 0);
+  if (terms.length === 0) {
+    return [...points];
+  }
+  return points.filter((point) => {
+    const haystack = point.text.toLowerCase();
+    return terms.every((term) => haystack.includes(term));
+  });
+}
+
+/** One fork-point row, on one line. */
+export function forkPointLabel(point: ForkPoint, width = 60): string {
+  const flat = point.text.replace(/\s+/g, " ").trim();
+  return flat.length > width ? `${flat.slice(0, width - 1)}…` : flat;
+}
+
+/** Session statistics as a single status line. */
+export function statsLine(stats: {
+  totalMessages: number;
+  tokens: { total: number };
+  cost: number;
+  contextTokens?: number;
+  contextWindow?: number;
+}): string {
+  const parts = [
+    `${stats.totalMessages} messages`,
+    `${stats.tokens.total.toLocaleString("en-US")} tokens`,
+    `$${stats.cost.toFixed(4)}`,
+  ];
+  if (stats.contextTokens !== undefined) {
+    const window = stats.contextWindow;
+    const percent = window ? ` (${Math.round((stats.contextTokens / window) * 100)}%)` : "";
+    parts.push(`context ${stats.contextTokens.toLocaleString("en-US")}${percent}`);
+  }
+  return parts.join("  ·  ");
 }

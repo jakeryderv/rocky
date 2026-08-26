@@ -1,9 +1,12 @@
 import { describe, expect, it, vi } from "vitest";
 import {
+  flattenSessionTree,
   toMessageDelta,
   toModelRef,
+  toSessionEntrySummary,
   toSessionEvent,
   toSessionMessage,
+  toSessionStats,
   toSlashCommand,
   toStopReason,
   toThinkingLevel,
@@ -379,6 +382,11 @@ function fakeSession(overrides: Partial<AgentSessionLike> = {}) {
     setAutoCompactionEnabled: vi.fn(),
     compact: vi.fn(async () => ({})),
     isBashRunning: false,
+    sessionManager: { getTree: () => [], getLeafId: () => null },
+    exportToHtml: vi.fn(async () => "/work/session.html"),
+    getUserMessagesForForking: () => [],
+    getSessionStats: () => ({ sessionId: "session-1" }),
+    setSessionName: vi.fn(),
     executeBash: vi.fn(async () => ({ output: "", exitCode: 0, cancelled: false, truncated: false })),
     abortBash: vi.fn(),
     ...overrides,
@@ -629,6 +637,7 @@ describe("PiAgentSessionAdapter", () => {
         ],
         switchTo: async () => ({ cancelled: false }),
         create: async () => ({ cancelled: false }),
+        fork: async () => ({ cancelled: false }),
         current: () => session,
       },
     });
@@ -671,6 +680,7 @@ describe("PiAgentSessionAdapter", () => {
         list: () => [{ id: "child", path: "/s/child.jsonl", parentSessionPath: "/s/gone.jsonl" }],
         switchTo: async () => ({ cancelled: false }),
         create: async () => ({ cancelled: false }),
+        fork: async () => ({ cancelled: false }),
         current: () => session,
       },
     });
@@ -694,6 +704,7 @@ describe("PiAgentSessionAdapter", () => {
           return { cancelled: false };
         },
         create: async () => ({ cancelled: false }),
+        fork: async () => ({ cancelled: false }),
         current: () => live,
       },
     });
@@ -725,6 +736,7 @@ describe("PiAgentSessionAdapter", () => {
         list: () => [],
         switchTo: async () => ({ cancelled: true }),
         create: async () => ({ cancelled: false }),
+        fork: async () => ({ cancelled: false }),
         current: () => other.session,
       },
     });
@@ -831,6 +843,220 @@ describe("PiAgentSessionAdapter", () => {
       ok: true,
     });
     expect(abortBash).toHaveBeenCalled();
+  });
+
+  it("projects session entries from the tree, so labels resolve", () => {
+    expect(
+      flattenSessionTree([
+        {
+          entry: {
+            id: "e1",
+            parentId: null,
+            type: "message",
+            timestamp: "2026-08-26T00:00:00.000Z",
+            message: { role: "user", content: [{ type: "text", text: "explain   this\nrepo" }] },
+          },
+          children: [
+            {
+              entry: {
+                id: "e2",
+                parentId: "e1",
+                type: "compaction",
+                timestamp: "2026-08-26T00:00:01.000Z",
+                summary: "summary",
+              },
+              // Only `getTree` attaches a label to the entry it marks; the flat
+              // entry list leaves it as a separate entry nobody can resolve.
+              label: "the good answer",
+            },
+          ],
+        },
+      ]),
+    ).toEqual([
+      {
+        id: "e1",
+        kind: "message",
+        role: "user",
+        preview: "explain this repo",
+        timestamp: Date.parse("2026-08-26T00:00:00.000Z"),
+      },
+      {
+        id: "e2",
+        parentId: "e1",
+        kind: "compaction",
+        preview: "summary",
+        timestamp: Date.parse("2026-08-26T00:00:01.000Z"),
+        label: "the good answer",
+      },
+    ]);
+  });
+
+  // An extension-injected message is still an extension entry to a tree view.
+  it("folds custom_message into custom rather than widening the kinds", () => {
+    expect(toSessionEntrySummary({ id: "x", type: "custom_message", customType: "notes" })?.kind).toBe(
+      "custom",
+    );
+  });
+
+  it("drops an entry kind the contract does not model", () => {
+    expect(toSessionEntrySummary({ id: "x", type: "something_new" })).toBeUndefined();
+  });
+
+  // Null right after a compaction, before the next response. Zero would read as
+  // "no context used".
+  it("omits an unknown context estimate rather than reporting zero", () => {
+    const stats = toSessionStats({ contextUsage: { tokens: null, contextWindow: 400 } });
+    expect(stats.contextTokens).toBeUndefined();
+    expect(stats.contextWindow).toBe(400);
+    expect(stats.tokens).toEqual({ input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 });
+  });
+
+  // A clone is a fork at the leaf, which is what the harness's own RPC mode
+  // does — one path rather than two that can drift.
+  it("clones by forking at the current leaf", async () => {
+    const forks: [string, string][] = [];
+    const { session } = fakeSession({
+      sessionManager: { getTree: () => [], getLeafId: () => "leaf-9" },
+    });
+    const adapter = new PiAgentSessionAdapter(session, {
+      cwd: "/work",
+      sessions: {
+        list: () => [],
+        switchTo: async () => ({ cancelled: false }),
+        create: async () => ({ cancelled: false }),
+        fork: async (entryId: string, position: "before" | "at") => {
+          forks.push([entryId, position]);
+          return { cancelled: false };
+        },
+        current: () => session,
+      },
+    });
+
+    expect(await adapter.execute({ type: "clone" })).toEqual({
+      type: "command_result",
+      id: undefined,
+      command: "clone",
+      ok: true,
+    });
+    expect(forks).toEqual([["leaf-9", "at"]]);
+  });
+
+  it("forks before a message by default and returns its text", async () => {
+    const { session } = fakeSession({
+      sessionManager: { getTree: () => [], getLeafId: () => "leaf" },
+    });
+    const adapter = new PiAgentSessionAdapter(session, {
+      cwd: "/work",
+      sessions: {
+        list: () => [],
+        switchTo: async () => ({ cancelled: false }),
+        create: async () => ({ cancelled: false }),
+        fork: async () => ({ cancelled: false, selectedText: "explain this repo" }),
+        current: () => session,
+      },
+    });
+    expect(await adapter.execute({ type: "fork", entryId: "e1" })).toEqual({
+      type: "command_result",
+      id: undefined,
+      command: "fork",
+      ok: true,
+      cancelled: false,
+      text: "explain this repo",
+    });
+  });
+
+  it("reports a vetoed fork as cancelled rather than as a failure", async () => {
+    const { session } = fakeSession();
+    const seen: SessionEvent[] = [];
+    const adapter = new PiAgentSessionAdapter(session, {
+      cwd: "/work",
+      sessions: {
+        list: () => [],
+        switchTo: async () => ({ cancelled: false }),
+        create: async () => ({ cancelled: false }),
+        fork: async () => ({ cancelled: true }),
+        current: () => session,
+      },
+    });
+    adapter.start();
+    adapter.subscribe((event) => seen.push(event));
+    expect(await adapter.execute({ type: "fork", entryId: "e1" })).toEqual({
+      type: "command_result",
+      id: undefined,
+      command: "fork",
+      ok: true,
+      cancelled: true,
+    });
+    expect(seen.filter((event) => event.type === "session_switched")).toEqual([]);
+  });
+
+  it("returns history from the leaf's tree, trimmed by `since`", async () => {
+    const tree = [
+      {
+        entry: { id: "e1", parentId: null, type: "message", message: { role: "user", content: "a" } },
+        children: [
+          {
+            entry: {
+              id: "e2",
+              parentId: "e1",
+              type: "message",
+              message: { role: "assistant", content: "b" },
+            },
+            children: [{ entry: { id: "e3", parentId: "e2", type: "session_info", name: "named" } }],
+          },
+        ],
+      },
+    ];
+    const { session } = fakeSession({
+      sessionManager: { getTree: () => tree as never, getLeafId: () => "e3" },
+    });
+    const adapter = new PiAgentSessionAdapter(session, { cwd: "/work" });
+
+    const all = await adapter.execute({ type: "get_entries" });
+    expect(all.ok && all.command === "get_entries" && all.entries.map((e) => e.id)).toEqual([
+      "e1",
+      "e2",
+      "e3",
+    ]);
+    expect(all.ok && all.command === "get_entries" && all.leafId).toBe("e3");
+
+    const since = await adapter.execute({ type: "get_entries", since: "e1" });
+    expect(since.ok && since.command === "get_entries" && since.entries.map((e) => e.id)).toEqual([
+      "e2",
+      "e3",
+    ]);
+  });
+
+  it("lists fork points and names the session", async () => {
+    const setSessionName = vi.fn();
+    const { session } = fakeSession({
+      setSessionName,
+      getUserMessagesForForking: () => [{ entryId: "e1", text: "explain this repo" }],
+    });
+    const adapter = new PiAgentSessionAdapter(session, { cwd: "/work" });
+
+    expect(await adapter.execute({ type: "get_fork_points" })).toEqual({
+      type: "command_result",
+      id: undefined,
+      command: "get_fork_points",
+      ok: true,
+      points: [{ entryId: "e1", text: "explain this repo" }],
+    });
+
+    await adapter.execute({ type: "set_session_name", name: "contract work" });
+    expect(setSessionName).toHaveBeenCalledWith("contract work");
+  });
+
+  it("exports to the path the session reports", async () => {
+    const { session } = fakeSession({ exportToHtml: vi.fn(async () => "/work/session.html") });
+    const adapter = new PiAgentSessionAdapter(session, { cwd: "/work" });
+    expect(await adapter.execute({ type: "export_html" })).toEqual({
+      type: "command_result",
+      id: undefined,
+      command: "export_html",
+      ok: true,
+      path: "/work/session.html",
+    });
   });
 
   it("keeps every command result JSON-serializable", async () => {

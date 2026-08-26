@@ -2,6 +2,19 @@
 
 ## Unreleased
 
+- **Export, fork, clone, naming, stats, and session history.** `/fork` continues from an earlier message and
+  puts that message back in the editor — which is what "fork from here" has to mean; `/clone` copies the
+  session as it stands; `/export [path]` writes the conversation out as HTML and says where it went; `/name`
+  names the session; `/stats` reports messages, tokens, cost and context use. The contract gains
+  `export_html`, `fork`, `clone`, `get_fork_points`, `set_session_name`, `get_session_stats` and
+  `get_entries`.
+
+- **Session history is a projection, not the harness's union.** `SessionEntrySummary` carries identity,
+  parent, kind, a one-line preview, a timestamp and a resolved label — what a tree view or fork picker
+  needs — instead of the nine-variant `SessionEntry` payloads it does not. There is no separate `get_tree`:
+  `parentId` is the tree, and a nested payload would be the same information in a shape that is harder to
+  update incrementally.
+
 - **Compaction and the message queues have a UI.** `/compact [what to keep]` summarizes the conversation;
   `/autocompact`, `/steering` and `/followup` toggle the settings that were reachable only through the
   contract before. Queued steering and follow-up messages are listed above the prompt, and the status line
