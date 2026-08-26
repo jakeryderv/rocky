@@ -1,4 +1,5 @@
 import { Worker } from "node:worker_threads";
+import { isBunBinary } from "../config.ts";
 import { type ImageResizeOptions, type ResizedImage, resizeImageInProcess } from "./image-resize-core.ts";
 
 export type { ImageResizeOptions, ResizedImage } from "./image-resize-core.ts";
@@ -94,9 +95,17 @@ export async function resizeImage(
 	);
 
 	// Bun compiled executables resolve worker entrypoints by string path, not via
-	// new URL(..., import.meta.url). Try the string path first under Bun so the
-	// release binary uses the embedded worker instead of falling back in-process.
-	if (typeof process.versions.bun === "string") {
+	// new URL(..., import.meta.url), so the release binary needs the string form
+	// to reach its embedded worker.
+	//
+	// This is gated on being an actual compiled binary, not merely on Bun being
+	// the runtime. A relative string path resolves against the CURRENT WORKING
+	// DIRECTORY, so under `bun run` it made "./src/utils/image-resize-worker.ts"
+	// in the user's own project a worker entrypoint: opening any image in a
+	// hostile repository executed that file. Inside a compiled binary the same
+	// path refers to Bun's embedded filesystem, where nothing outside the
+	// executable can be planted.
+	if (isBunBinary) {
 		try {
 			return await resizeImageInWorker("./src/utils/image-resize-worker.ts", inputBytes, mimeType, options);
 		} catch {}

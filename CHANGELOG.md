@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+- **Security: opening an image no longer runs code from the working directory under Bun.** The harness picks a
+  worker entrypoint by relative string path when Bun is the runtime, because a Bun *compiled executable*
+  resolves worker entrypoints that way. The guard tested "is Bun the runtime" rather than "is this a compiled
+  binary", and a relative path resolves against the current working directory — so under `bun run`, a file at
+  `src/utils/image-resize-worker.ts` inside the project being worked on was executed whenever an image was
+  processed. That is reachable from the `read` tool, `@file` attachments, and tool-result images, and Rocky
+  already runs under Bun via `npm run client`. The guard is now `isBunBinary`, where the path refers to Bun's
+  embedded filesystem and nothing outside the executable can be planted. Inherited from upstream Pi 0.84.2.
+
 - **The client can sign in.** `/login` lists every provider and every way into it; `/logout` removes a stored
   credential. OAuth and API-key logins both work, including the device-code flows, without leaving the
   client.
