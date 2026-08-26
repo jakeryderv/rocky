@@ -32,6 +32,16 @@ export const CLIENT_COMMANDS: readonly CommandEntry[] = [
   { name: "autocompact", description: "Toggle automatic compaction", origin: "client" },
   { name: "steering", description: "Toggle how steering messages are released", origin: "client" },
   { name: "followup", description: "Toggle how follow-up messages are released", origin: "client" },
+  { name: "fork", description: "Continue from an earlier message", origin: "client" },
+  { name: "clone", description: "Copy this session and continue in the copy", origin: "client" },
+  {
+    name: "export",
+    description: "Write the conversation out as HTML",
+    argumentHint: "[path]",
+    origin: "client",
+  },
+  { name: "name", description: "Name this session", argumentHint: "<name>", origin: "client" },
+  { name: "stats", description: "Show what this session has cost", origin: "client" },
 ];
 
 /**

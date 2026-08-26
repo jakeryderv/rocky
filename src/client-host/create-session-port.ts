@@ -219,6 +219,15 @@ export async function createRockySessionPort(
       },
       create: async () =>
         (runtime as unknown as { newSession(): Promise<{ cancelled: boolean }> }).newSession(),
+      fork: async (entryId: string, position: "before" | "at") =>
+        (
+          runtime as unknown as {
+            fork(
+              id: string,
+              options: { position: "before" | "at" },
+            ): Promise<{ cancelled: boolean; selectedText?: string }>;
+          }
+        ).fork(entryId, { position }),
       current: () => liveSession() as never,
     };
 

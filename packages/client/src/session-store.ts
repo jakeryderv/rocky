@@ -7,11 +7,13 @@
  */
 
 import type {
+  ForkPoint,
   ModelRef,
   QueueMode,
   SessionCommand,
   SessionPort,
   SessionState,
+  SessionStats,
   SessionSummary,
   SlashCommand,
 } from "@rocky/contract";
@@ -48,6 +50,18 @@ export interface SessionStore {
   setAutoCompaction: (enabled: boolean) => Promise<void>;
   setSteeringMode: (mode: QueueMode) => Promise<void>;
   setFollowUpMode: (mode: QueueMode) => Promise<void>;
+  /** Points this session can be forked from. Loaded on demand. */
+  forkPoints: () => readonly ForkPoint[];
+  loadForkPoints: () => Promise<void>;
+  fork: (entryId: string) => Promise<string | undefined>;
+  clone: () => Promise<void>;
+  exportHtml: (outputPath?: string) => Promise<void>;
+  setSessionName: (name: string) => Promise<void>;
+  stats: () => SessionStats | undefined;
+  loadStats: () => Promise<void>;
+  /** A one-off line for the user: where an export went, what the stats are. */
+  notice: () => string | undefined;
+  clearNotice: () => void;
   submit: (text: string) => Promise<void>;
   abort: () => Promise<void>;
   dispose: () => void;
@@ -63,6 +77,9 @@ export function createSessionStore(port: SessionPort): SessionStore {
     steering: [],
     followUp: [],
   });
+  const [forkPoints, setForkPoints] = createSignal<readonly ForkPoint[]>([]);
+  const [stats, setStats] = createSignal<SessionStats | undefined>(undefined);
+  const [notice, setNotice] = createSignal<string | undefined>(undefined);
 
   // State arrives as a push. The one `get_state` below is the cold-start
   // snapshot only: without it a client that connects mid-session would render
@@ -142,6 +159,15 @@ export function createSessionStore(port: SessionPort): SessionStore {
     }
   };
 
+  const loadForkPoints = async () => {
+    const result = await port.execute({ type: "get_fork_points" });
+    if (result.ok && result.command === "get_fork_points") {
+      setForkPoints(result.points);
+    } else if (!result.ok) {
+      setTranscript((current) => ({ ...current, error: result.error }));
+    }
+  };
+
   const send = async (command: SessionCommand) => {
     const result = await port.execute(command);
     if (!result.ok) {
@@ -169,6 +195,45 @@ export function createSessionStore(port: SessionPort): SessionStore {
     setAutoCompaction: (enabled: boolean) => send({ type: "set_auto_compaction", enabled }),
     setSteeringMode: (mode: QueueMode) => send({ type: "set_steering_mode", mode }),
     setFollowUpMode: (mode: QueueMode) => send({ type: "set_follow_up_mode", mode }),
+    forkPoints,
+    loadForkPoints,
+    // Returns the forked-from text so the client can put it back in the editor,
+    // which is what makes "fork before this message" mean "edit and retry".
+    fork: async (entryId: string) => {
+      const result = await port.execute({ type: "fork", entryId, position: "before" });
+      if (!result.ok) {
+        setTranscript((current) => ({ ...current, error: result.error }));
+        return undefined;
+      }
+      return result.command === "fork" && !result.cancelled ? result.text : undefined;
+    },
+    clone: () => send({ type: "clone" }),
+    exportHtml: async (outputPath?: string) => {
+      const result = await port.execute({
+        type: "export_html",
+        ...(outputPath ? { outputPath } : {}),
+      });
+      if (!result.ok) {
+        setTranscript((current) => ({ ...current, error: result.error }));
+        return;
+      }
+      if (result.command === "export_html") {
+        setNotice(`exported to ${result.path}`);
+      }
+    },
+    setSessionName: (name: string) => send({ type: "set_session_name", name }),
+    stats,
+    loadStats: async () => {
+      const result = await port.execute({ type: "get_session_stats" });
+      if (result.ok && result.command === "get_session_stats") {
+        setStats(result.stats);
+        setNotice(undefined);
+      } else if (!result.ok) {
+        setTranscript((current) => ({ ...current, error: result.error }));
+      }
+    },
+    notice,
+    clearNotice: () => setNotice(undefined),
     runBash: (command: string, excludeFromContext: boolean) =>
       send({ type: "bash", command, ...(excludeFromContext ? { excludeFromContext: true } : {}) }),
     abortBash: () => send({ type: "abort_bash" }),

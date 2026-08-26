@@ -10,8 +10,11 @@ import type {
   CompactionReason,
   MessageDelta,
   ModelRef,
+  SessionEntryKind,
+  SessionEntrySummary,
   SessionEvent,
   SessionMessage,
+  SessionStats,
   SessionSummary,
   SlashCommand,
   SlashCommandScope,
@@ -181,6 +184,175 @@ export function indexSessionsByPath(infos: readonly PiSessionInfoLike[]): Map<st
     }
   }
   return index;
+}
+
+const SESSION_ENTRY_KINDS: readonly SessionEntryKind[] = [
+  "message",
+  "model_change",
+  "thinking_level_change",
+  "compaction",
+  "branch_summary",
+  "label",
+  "session_info",
+  "custom",
+];
+
+interface PiSessionEntryLike {
+  id: string;
+  parentId?: string | null;
+  type: string;
+  timestamp?: string | number;
+  label?: string;
+  message?: { role?: string; content?: unknown };
+  summary?: string;
+  customType?: string;
+  name?: string;
+  thinkingLevel?: string;
+  provider?: string;
+  modelId?: string;
+}
+
+/** Collapse whatever an entry is about into one readable line. */
+function entryPreview(entry: PiSessionEntryLike): string {
+  if (entry.type === "message") {
+    return toResultText(entry.message?.content);
+  }
+  if (entry.type === "compaction" || entry.type === "branch_summary") {
+    return entry.summary ?? "";
+  }
+  if (entry.type === "model_change") {
+    return `${entry.provider ?? ""}/${entry.modelId ?? ""}`;
+  }
+  if (entry.type === "thinking_level_change") {
+    return entry.thinkingLevel ?? "";
+  }
+  if (entry.type === "session_info") {
+    return entry.name ?? "";
+  }
+  if (entry.type === "custom" || entry.type === "custom_message") {
+    return entry.customType ?? "";
+  }
+  return "";
+}
+
+function toEntryRole(role: string | undefined): SessionEntrySummary["role"] {
+  if (role === "user" || role === "assistant") {
+    return role;
+  }
+  if (role === "toolResult") {
+    return "tool_result";
+  }
+  if (role === "bashExecution") {
+    return "bash";
+  }
+  return undefined;
+}
+
+/**
+ * Project a harness session entry onto the contract.
+ *
+ * `custom_message` folds into `custom`: the contract's kinds are what a client
+ * renders differently, and an extension-injected message is still an extension
+ * entry as far as a tree view is concerned.
+ */
+export function toSessionEntrySummary(entry: PiSessionEntryLike): SessionEntrySummary | undefined {
+  const kind = entry.type === "custom_message" ? "custom" : entry.type;
+  if (!(SESSION_ENTRY_KINDS as readonly string[]).includes(kind)) {
+    return undefined;
+  }
+  const preview = entryPreview(entry).replace(/\s+/g, " ").trim();
+  const summary: SessionEntrySummary = {
+    id: entry.id,
+    kind: kind as SessionEntryKind,
+    preview: preview.length > PREVIEW_LENGTH ? `${preview.slice(0, PREVIEW_LENGTH - 1)}…` : preview,
+    timestamp: toEpochMillis(entry.timestamp),
+  };
+  if (entry.parentId) {
+    summary.parentId = entry.parentId;
+  }
+  const role = toEntryRole(entry.message?.role);
+  if (role !== undefined) {
+    summary.role = role;
+  }
+  if (entry.label !== undefined) {
+    summary.label = entry.label;
+  }
+  return summary;
+}
+
+interface PiSessionTreeNodeLike {
+  entry: PiSessionEntryLike;
+  children?: readonly PiSessionTreeNodeLike[];
+  label?: string;
+}
+
+/**
+ * Flatten the harness's session tree, parent before child.
+ *
+ * Reading the tree rather than the flat entry list is what resolves labels:
+ * a label is itself an entry, and only `getTree` attaches it to the entry it
+ * marks. Depth-first order keeps every parent ahead of its children, so a
+ * client can build its own tree in one pass.
+ */
+export function flattenSessionTree(nodes: readonly PiSessionTreeNodeLike[]): SessionEntrySummary[] {
+  const flat: SessionEntrySummary[] = [];
+  const visit = (node: PiSessionTreeNodeLike) => {
+    const summary = toSessionEntrySummary({
+      ...node.entry,
+      ...(node.label !== undefined ? { label: node.label } : {}),
+    });
+    if (summary) {
+      flat.push(summary);
+    }
+    for (const child of node.children ?? []) {
+      visit(child);
+    }
+  };
+  for (const node of nodes) {
+    visit(node);
+  }
+  return flat;
+}
+
+interface PiSessionStatsLike {
+  sessionId?: string;
+  userMessages?: number;
+  assistantMessages?: number;
+  toolCalls?: number;
+  toolResults?: number;
+  totalMessages?: number;
+  tokens?: { input?: number; output?: number; cacheRead?: number; cacheWrite?: number; total?: number };
+  cost?: number;
+  contextUsage?: { tokens?: number | null; contextWindow?: number };
+}
+
+export function toSessionStats(stats: PiSessionStatsLike): SessionStats {
+  const mapped: SessionStats = {
+    sessionId: stats.sessionId ?? "",
+    userMessages: stats.userMessages ?? 0,
+    assistantMessages: stats.assistantMessages ?? 0,
+    toolCalls: stats.toolCalls ?? 0,
+    toolResults: stats.toolResults ?? 0,
+    totalMessages: stats.totalMessages ?? 0,
+    tokens: {
+      input: stats.tokens?.input ?? 0,
+      output: stats.tokens?.output ?? 0,
+      cacheRead: stats.tokens?.cacheRead ?? 0,
+      cacheWrite: stats.tokens?.cacheWrite ?? 0,
+      total: stats.tokens?.total ?? 0,
+    },
+    cost: stats.cost ?? 0,
+  };
+  // Null right after a compaction, before the next response — absent rather
+  // than zero, because zero would read as "no context used".
+  const contextTokens = stats.contextUsage?.tokens;
+  if (typeof contextTokens === "number") {
+    mapped.contextTokens = contextTokens;
+  }
+  if (stats.contextUsage?.contextWindow !== undefined) {
+    mapped.contextWindow = stats.contextUsage.contextWindow;
+  }
+  return mapped;
 }
 
 export function toUsage(usage: Partial<Usage> | undefined): Usage {

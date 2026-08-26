@@ -7,7 +7,7 @@
 import type { MouseEvent, ScrollBoxRenderable, TextareaRenderable } from "@opentui/core";
 import { defaultTextareaKeyBindings } from "@opentui/core";
 import { useKeyboard, useRenderer } from "@opentui/solid";
-import type { ModelRef, QueueMode, SessionPort, SessionSummary } from "@rocky/contract";
+import type { ForkPoint, ModelRef, QueueMode, SessionPort, SessionSummary } from "@rocky/contract";
 import { createEffect, createMemo, createSignal, For, Show } from "solid-js";
 import { mergeCommands, parseBashPrefix, routeSubmission } from "./model/commands.js";
 import {
@@ -20,7 +20,14 @@ import {
 } from "./model/completion.js";
 import { editorRows, promptKeyBindings } from "./model/editor.js";
 import { emptyHistory, newer, older, remember } from "./model/history.js";
-import { filterModels, isActiveModel, modelLabel } from "./model/picker.js";
+import {
+  filterForkPoints,
+  filterModels,
+  forkPointLabel,
+  isActiveModel,
+  modelLabel,
+  statsLine,
+} from "./model/picker.js";
 import { filterSessions, sessionLabel, sortSessions } from "./model/sessions.js";
 import { entryLines } from "./model/transcript.js";
 import { createSessionStore } from "./session-store.js";
@@ -41,7 +48,7 @@ export function App(props: { port: SessionPort; onQuit?: (() => void) | undefine
   const [selected, setSelected] = createSignal(0);
   // One signal rather than a flag per overlay: two booleans can disagree, and
   // "which overlay is open" is a single fact.
-  const [overlay, setOverlay] = createSignal<"model" | "session" | undefined>(undefined);
+  const [overlay, setOverlay] = createSignal<"model" | "session" | "fork" | undefined>(undefined);
   const [picked, setPicked] = createSignal(0);
   // Sampled when a picker opens rather than read during render: relative times
   // do not need to tick while the list is on screen, and a clock read inside
@@ -95,16 +102,32 @@ export function App(props: { port: SessionPort; onQuit?: (() => void) | undefine
     overlay() === "session" ? sortSessions(filterSessions(store.sessions(), draft())) : [],
   );
 
-  const pickerLength = () => (overlay() === "model" ? pickerModels().length : pickerSessions().length);
+  const pickerForks = createMemo(() =>
+    overlay() === "fork" ? filterForkPoints(store.forkPoints(), draft()) : [],
+  );
+
+  const pickerLength = () =>
+    overlay() === "model"
+      ? pickerModels().length
+      : overlay() === "session"
+        ? pickerSessions().length
+        : pickerForks().length;
 
   createEffect(() => setPicked((current) => clampSelection(current, pickerLength())));
 
-  const openPicker = (kind: "model" | "session") => {
+  const openPicker = (kind: "model" | "session" | "fork") => {
     showInInput("");
     setPicked(0);
     setNow(Date.now());
     setOverlay(kind);
-    void (kind === "model" ? store.loadModels() : store.loadSessions());
+    store.clearNotice();
+    if (kind === "model") {
+      void store.loadModels();
+    } else if (kind === "session") {
+      void store.loadSessions();
+    } else {
+      void store.loadForkPoints();
+    }
   };
 
   const closeOverlay = () => {
@@ -117,6 +140,22 @@ export function App(props: { port: SessionPort; onQuit?: (() => void) | undefine
       void store.setModel(model);
     }
     closeOverlay();
+  };
+
+  /**
+   * Fork before the chosen message and put its text back in the editor.
+   *
+   * That is what makes "fork from here" mean "edit this and try again": the
+   * core returns the message it forked before, and dropping it would leave the
+   * user retyping what they just chose.
+   */
+  const chooseForkPoint = (point: ForkPoint | undefined) => {
+    setOverlay(undefined);
+    if (!point) {
+      showInInput("");
+      return;
+    }
+    void store.fork(point.entryId).then((text) => showInInput(text ?? ""));
   };
 
   const chooseSession = (session: SessionSummary | undefined) => {
@@ -161,6 +200,23 @@ export function App(props: { port: SessionPort; onQuit?: (() => void) | undefine
       case "followup":
         void store.setFollowUpMode(flip(store.state()?.followUpMode));
         return;
+      case "fork":
+        openPicker("fork");
+        return;
+      case "clone":
+        void store.clone();
+        return;
+      case "export":
+        void store.exportHtml(args.length > 0 ? args : undefined);
+        return;
+      case "name":
+        if (args.length > 0) {
+          void store.setSessionName(args);
+        }
+        return;
+      case "stats":
+        void store.loadStats();
+        return;
     }
   };
 
@@ -171,6 +227,10 @@ export function App(props: { port: SessionPort; onQuit?: (() => void) | undefine
     }
     if (overlay() === "session") {
       chooseSession(pickerSessions()[picked()]);
+      return;
+    }
+    if (overlay() === "fork") {
+      chooseForkPoint(pickerForks()[picked()]);
       return;
     }
     if (text.trim().length === 0) {
@@ -394,6 +454,12 @@ export function App(props: { port: SessionPort; onQuit?: (() => void) | undefine
         </box>
       </Show>
 
+      <Show when={store.stats() !== undefined && store.notice() === undefined}>
+        {() => <text fg="#888888">Σ {statsLine(store.stats() as never)}</text>}
+      </Show>
+
+      <Show when={store.notice()}>{(text: () => string) => <text fg="#888888">✓ {text()}</text>}</Show>
+
       <Show when={store.queue().steering.length + store.queue().followUp.length > 0}>
         <box style={{ flexDirection: "column", flexShrink: 0 }}>
           <For
@@ -408,6 +474,30 @@ export function App(props: { port: SessionPort; onQuit?: (() => void) | undefine
               </text>
             )}
           </For>
+        </box>
+      </Show>
+
+      <Show when={overlay() === "fork"}>
+        <box style={{ flexDirection: "column", flexShrink: 0 }}>
+          <text fg="#888888">Fork before a message ↑↓ · enter forks · ctrl+c closes</text>
+          <Show
+            when={pickerForks().length > 0}
+            fallback={
+              <text fg="#888888">
+                {"  "}
+                {store.forkPoints().length === 0 ? "nothing to fork from yet" : "no match"}
+              </text>
+            }
+          >
+            <For each={pickerForks()}>
+              {(point, index) => (
+                <text fg={index() === picked() ? "#ffffff" : "#888888"}>
+                  {index() === picked() ? "› " : "  "}
+                  {forkPointLabel(point)}
+                </text>
+              )}
+            </For>
+          </Show>
         </box>
       </Show>
 
@@ -460,7 +550,9 @@ export function App(props: { port: SessionPort; onQuit?: (() => void) | undefine
             ? "Filter models…"
             : overlay() === "session"
               ? "Filter sessions…"
-              : "Ask Rocky…   / commands · ! shell · shift+enter newline · ctrl+c aborts, or quits when idle"
+              : overlay() === "fork"
+                ? "Filter messages…"
+                : "Ask Rocky…   / commands · ! shell · shift+enter newline · ctrl+c aborts, or quits when idle"
         }
         // Grows with the draft rather than scrolling a one-row window, and
         // stops at a bound so a long paste cannot swallow the transcript.
