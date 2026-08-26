@@ -36,6 +36,8 @@ export interface SessionStore {
   loadSessions: () => Promise<void>;
   switchSession: (sessionId: string) => Promise<void>;
   newSession: () => Promise<void>;
+  runBash: (command: string, excludeFromContext: boolean) => Promise<void>;
+  abortBash: () => Promise<void>;
   submit: (text: string) => Promise<void>;
   abort: () => Promise<void>;
   dispose: () => void;
@@ -139,6 +141,9 @@ export function createSessionStore(port: SessionPort): SessionStore {
     sessions,
     loadSessions,
     switchSession: (sessionId: string) => send({ type: "switch_session", sessionId }),
+    runBash: (command: string, excludeFromContext: boolean) =>
+      send({ type: "bash", command, ...(excludeFromContext ? { excludeFromContext: true } : {}) }),
+    abortBash: () => send({ type: "abort_bash" }),
     newSession: () => send({ type: "new_session" }),
     setModel: (model: ModelRef) => send({ type: "set_model", provider: model.provider, modelId: model.id }),
     submit: (text: string) => send({ type: "prompt", text }),

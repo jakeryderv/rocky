@@ -21,6 +21,7 @@ const BASE_STATE: SessionState = {
   autoCompactionEnabled: true,
   messageCount: 0,
   pendingMessageCount: 0,
+  isBashRunning: false,
 };
 
 function fakePort(options: { deferInitialState?: boolean } = {}) {

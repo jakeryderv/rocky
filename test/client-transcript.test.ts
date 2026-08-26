@@ -405,3 +405,79 @@ describe("rebuilding a transcript from message history", () => {
     expect(transcriptFromMessages([])).toEqual(emptyTranscript());
   });
 });
+
+describe("shell commands the user ran", () => {
+  const result = { output: "done", exitCode: 0, cancelled: false, truncated: false };
+
+  it("opens an entry, appends output, and settles on the result", () => {
+    const state = run([
+      { type: "bash_start", commandId: "b1", command: "npm test" },
+      { type: "bash_output", commandId: "b1", delta: "one\n" },
+      { type: "bash_output", commandId: "b1", delta: "two\n" },
+      { type: "bash_end", commandId: "b1", result: { ...result, output: "one\ntwo\n" } },
+    ]);
+    expect(state.entries).toHaveLength(1);
+    expect(state.entries[0]?.role).toBe("bash");
+    expect(state.entries[0]?.complete).toBe(true);
+    expect(entryLines(state.entries[0] as never, {})).toEqual(["npm test", "  one", "  two"]);
+  });
+
+  // The contract calls this a delta, unlike `tool_progress` next door. Treating
+  // it as a snapshot would show only the final chunk.
+  it("appends output rather than replacing it", () => {
+    const state = run([
+      { type: "bash_start", command: "ls" },
+      { type: "bash_output", delta: "a" },
+      { type: "bash_output", delta: "b" },
+    ]);
+    const block = state.entries[0]?.blocks[0];
+    expect(block?.kind === "bash" && block.output).toBe("ab");
+  });
+
+  it("marks a command still running", () => {
+    const state = run([{ type: "bash_start", command: "sleep 100" }]);
+    expect(entryLines(state.entries[0] as never, {})).toEqual(["sleep 100 …"]);
+  });
+
+  it("reports a non-zero exit and a cancellation", () => {
+    const failed = run([
+      { type: "bash_start", command: "false" },
+      { type: "bash_end", result: { output: "", exitCode: 1, cancelled: false, truncated: false } },
+    ]);
+    expect(entryLines(failed.entries[0] as never, {})).toEqual(["false", "  ✖ exit 1"]);
+
+    const killed = run([
+      { type: "bash_start", command: "sleep 100" },
+      { type: "bash_end", result: { output: "", cancelled: true, truncated: false } },
+    ]);
+    expect(entryLines(killed.entries[0] as never, {})).toEqual(["sleep 100", "  ✖ cancelled"]);
+  });
+
+  // The streamed chunks may have been throttled or truncated on the way.
+  it("lets the authoritative output supersede the streamed chunks", () => {
+    const state = run([
+      { type: "bash_start", commandId: "b1", command: "ls" },
+      { type: "bash_output", commandId: "b1", delta: "partial" },
+      { type: "bash_end", commandId: "b1", result: { ...result, output: "complete" } },
+    ]);
+    const block = state.entries[0]?.blocks[0];
+    expect(block?.kind === "bash" && block.output).toBe("complete");
+  });
+
+  it("attributes output to the command that asked for it", () => {
+    const state = run([
+      { type: "bash_start", commandId: "b1", command: "first" },
+      { type: "bash_start", commandId: "b2", command: "second" },
+      { type: "bash_output", commandId: "b1", delta: "one" },
+      { type: "bash_output", commandId: "b2", delta: "two" },
+    ]);
+    const first = state.entries[0]?.blocks[0];
+    const second = state.entries[1]?.blocks[0];
+    expect(first?.kind === "bash" && first.output).toBe("one");
+    expect(second?.kind === "bash" && second.output).toBe("two");
+  });
+
+  it("ignores output for a command it never saw start", () => {
+    expect(run([{ type: "bash_output", commandId: "ghost", delta: "x" }]).entries).toEqual([]);
+  });
+});

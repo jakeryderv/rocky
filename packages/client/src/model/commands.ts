@@ -48,6 +48,22 @@ export function mergeCommands(core: readonly SlashCommand[]): CommandEntry[] {
 }
 
 /**
+ * A shell command typed at the prompt.
+ *
+ * `!cmd` runs it and shows it to the model; `!!cmd` keeps both out of context.
+ * The doubled prefix is the inherited TUI's convention, kept so the two front
+ * ends do not disagree about what `!!` means.
+ */
+export function parseBashPrefix(text: string): { command: string; excludeFromContext: boolean } | undefined {
+  if (!text.startsWith("!")) {
+    return undefined;
+  }
+  const excludeFromContext = text.startsWith("!!");
+  const command = text.slice(excludeFromContext ? 2 : 1).trim();
+  return command.length === 0 ? undefined : { command, excludeFromContext };
+}
+
+/**
  * Route submitted text: a client command, or something for the core.
  *
  * Matching is exact on the first token, so `/models` and `/model-foo` go to the

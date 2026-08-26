@@ -48,6 +48,7 @@ export const FIXTURE_STATE: SessionState = {
   autoCompactionEnabled: true,
   messageCount: 4,
   pendingMessageCount: 0,
+  isBashRunning: false,
 };
 
 export const FIXTURE_SLASH_COMMANDS: SlashCommand[] = [
@@ -107,6 +108,8 @@ export const FIXTURE_COMMANDS: SessionCommand[] = [
   { id: "c16", type: "list_sessions" },
   { id: "c17", type: "switch_session", sessionId: "01a03ba3-c8d2-75c2-86d9-000000000002" },
   { id: "c18", type: "new_session" },
+  { id: "c19", type: "bash", command: "npm run verify", excludeFromContext: true },
+  { id: "c20", type: "abort_bash" },
 ];
 
 export const FIXTURE_EVENTS: SessionEvent[] = [
@@ -148,6 +151,13 @@ export const FIXTURE_EVENTS: SessionEvent[] = [
     },
   },
   { type: "turn_end", stopReason: "stop" },
+  { type: "bash_start", commandId: "c19", command: "npm run verify" },
+  { type: "bash_output", commandId: "c19", delta: "· · ·" },
+  {
+    type: "bash_end",
+    commandId: "c19",
+    result: { output: "263 passed", exitCode: 0, cancelled: false, truncated: false },
+  },
   { type: "queue_update", steering: ["queued steer"], followUp: [] },
   { type: "compaction_start", reason: "threshold" },
   { type: "compaction_end", reason: "threshold", aborted: false },
@@ -186,6 +196,13 @@ export const FIXTURE_COMMAND_RESULTS: CommandResult[] = [
     commands: FIXTURE_SLASH_COMMANDS,
   },
   { type: "command_result", id: "c16", command: "list_sessions", ok: true, sessions: FIXTURE_SESSIONS },
+  {
+    type: "command_result",
+    id: "c19",
+    command: "bash",
+    ok: true,
+    result: { output: "263 passed", exitCode: 0, cancelled: false, truncated: false },
+  },
 ];
 
 /** Every `MessageDelta` variant, so the delta union is covered exhaustively too. */

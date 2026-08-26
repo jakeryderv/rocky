@@ -14,10 +14,20 @@ import type { SessionEvent, SessionMessage, ToolResultBlock, Usage } from "@rock
 export type TranscriptBlock =
   | { kind: "text"; text: string }
   | { kind: "thinking"; text: string }
-  | { kind: "tool_call"; id: string; name: string; argumentsJson: string; settled: boolean };
+  | { kind: "tool_call"; id: string; name: string; argumentsJson: string; settled: boolean }
+  /** A shell command the user ran directly, and its output so far. */
+  | {
+      kind: "bash";
+      commandId?: string;
+      command: string;
+      output: string;
+      exitCode?: number;
+      cancelled: boolean;
+      running: boolean;
+    };
 
 export interface TranscriptEntry {
-  role: "user" | "assistant" | "tool_result";
+  role: "user" | "assistant" | "tool_result" | "bash";
   /** Sparse by design: blocks are addressed by the delta's `index`. */
   blocks: TranscriptBlock[];
   /** Set once the authoritative message arrives. */
@@ -118,6 +128,26 @@ export function transcriptFromMessages(messages: readonly SessionMessage[]): Tra
   return { ...state, entries };
 }
 
+/**
+ * The running bash entry an event belongs to.
+ *
+ * Matched by command id when there is one; otherwise the last one still
+ * running, because the harness omits the id for output it was not asked to
+ * attribute.
+ */
+function findBashEntry(state: TranscriptState, commandId: string | undefined): number {
+  for (let i = state.entries.length - 1; i >= 0; i -= 1) {
+    const block = state.entries[i]?.blocks[0];
+    if (block?.kind !== "bash" || !block.running) {
+      continue;
+    }
+    if (commandId === undefined || block.commandId === undefined || block.commandId === commandId) {
+      return i;
+    }
+  }
+  return -1;
+}
+
 function lastOpenEntry(state: TranscriptState): number {
   for (let i = state.entries.length - 1; i >= 0; i -= 1) {
     if (!state.entries[i]?.complete) {
@@ -143,6 +173,74 @@ export function applyEvent(state: TranscriptState, event: SessionEvent): Transcr
 
     case "turn_end":
       return { ...state, streaming: false };
+
+    case "bash_start":
+      return {
+        ...state,
+        entries: [
+          ...state.entries,
+          {
+            role: "bash",
+            blocks: [
+              {
+                kind: "bash",
+                ...(event.commandId !== undefined ? { commandId: event.commandId } : {}),
+                command: event.command,
+                output: "",
+                cancelled: false,
+                running: true,
+              },
+            ],
+            complete: false,
+          },
+        ],
+      };
+
+    case "bash_output": {
+      // Appended, not replaced: the contract says this is a delta, unlike
+      // `tool_progress` next door.
+      const at = findBashEntry(state, event.commandId);
+      if (at < 0) {
+        return state;
+      }
+      const entry = state.entries[at] as TranscriptEntry;
+      const block = entry.blocks[0];
+      if (block?.kind !== "bash") {
+        return state;
+      }
+      const entries = state.entries.slice();
+      entries[at] = { ...entry, blocks: [{ ...block, output: block.output + event.delta }] };
+      return { ...state, entries };
+    }
+
+    case "bash_end": {
+      const at = findBashEntry(state, event.commandId);
+      if (at < 0) {
+        return state;
+      }
+      const entry = state.entries[at] as TranscriptEntry;
+      const block = entry.blocks[0];
+      if (block?.kind !== "bash") {
+        return state;
+      }
+      const entries = state.entries.slice();
+      entries[at] = {
+        ...entry,
+        complete: true,
+        blocks: [
+          {
+            ...block,
+            // The authoritative output supersedes the streamed chunks, which
+            // may have been throttled or truncated on the way.
+            output: event.result.output,
+            ...(event.result.exitCode !== undefined ? { exitCode: event.result.exitCode } : {}),
+            cancelled: event.result.cancelled,
+            running: false,
+          },
+        ],
+      };
+      return { ...state, entries };
+    }
 
     case "message_start":
       // Tool output is rendered inline under its tool call, from `tool_end`.
@@ -286,6 +384,27 @@ export function entryLines(
     } else if (block.kind === "thinking") {
       if (block.text.length > 0) {
         lines.push(`· ${block.text}`);
+      }
+    } else if (block.kind === "bash") {
+      // No `$` here: the role prefix carries it, the same way `›` and `🅡` mark
+      // the other roles, so continuation lines stay aligned.
+      lines.push(`${block.command}${block.running ? " …" : ""}`);
+      if (block.output.length > 0) {
+        // Tail, not head: for a running command the newest output matters most.
+        const all = block.output.replace(/\n$/, "").split("\n");
+        const shown = all.slice(-TOOL_OUTPUT_LINES);
+        if (all.length > shown.length) {
+          const dropped = all.length - shown.length;
+          lines.push(`  … ${dropped} earlier line${dropped === 1 ? "" : "s"}`);
+        }
+        for (const line of shown) {
+          lines.push(`  ${line}`);
+        }
+      }
+      if (block.cancelled) {
+        lines.push("  ✖ cancelled");
+      } else if (!block.running && block.exitCode !== undefined && block.exitCode !== 0) {
+        lines.push(`  ✖ exit ${block.exitCode}`);
       }
     } else {
       const name = block.name.length > 0 ? block.name : "(tool)";
