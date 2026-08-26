@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+- **The prompt input is a real multi-line editor.** A pasted block used to be held aside and shown as
+  `+ N pasted lines`, because the single-line input could not represent newlines — it was uneditable until it
+  had been sent. The prompt is now a textarea that grows with the draft up to ten rows, so a paste can be
+  edited in place. Enter sends and a newline is the deliberate act, which inverts the textarea's own default;
+  shift+Enter, alt+Enter and ctrl+J all insert one, because terminals disagree about which of those they can
+  report. Once a draft has more than one line the arrows belong to its cursor rather than to prompt history —
+  recalling history over a half-written block would destroy it with no undo across that boundary.
+
 - **The client can switch models.** `set_model` and `get_available_models` were in the contract with nothing
   on top of them, and the client host never supplied a model catalog at all — so `get_available_models`
   returned an empty list and `set_model` always failed. The host now reads
