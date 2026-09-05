@@ -5730,10 +5730,178 @@
       "name": "@jakeryderv/rocky-client",
       "version": "0.1.0",
       "devDependencies": {
-        "@opentui/core": "0.5.8",
+        "@opentui/core": "0.5.10",
         "@opentui/solid": "0.5.8",
         "@types/bun": "1.4.0",
         "solid-js": "1.9.12"
+      }
+    },
+    "packages/client/node_modules/@opentui/core": {
+      "version": "0.5.10",
+      "resolved": "https://registry.npmjs.org/@opentui/core/-/core-0.5.10.tgz",
+      "integrity": "sha512-C3a2UbmefeAjIxAgm4BqjuSxKT4oqutfvYFwVvUgMxmGRHkNbBc/s7sukV0JgwcxFcV3uMFrXxo+E+BQtvuOiw==",
+      "dev": true,
+      "license": "MIT",
+      "dependencies": {
+        "bun-ffi-structs": "0.3.1",
+        "diff": "9.0.0",
+        "marked": "17.0.1",
+        "string-width": "7.2.0",
+        "strip-ansi": "7.1.2"
+      },
+      "optionalDependencies": {
+        "@opentui/core-darwin-arm64": "0.5.10",
+        "@opentui/core-darwin-x64": "0.5.10",
+        "@opentui/core-linux-arm64": "0.5.10",
+        "@opentui/core-linux-arm64-musl": "0.5.10",
+        "@opentui/core-linux-x64": "0.5.10",
+        "@opentui/core-linux-x64-musl": "0.5.10",
+        "@opentui/core-win32-arm64": "0.5.10",
+        "@opentui/core-win32-x64": "0.5.10"
+      },
+      "peerDependencies": {
+        "web-tree-sitter": "0.25.10"
+      }
+    },
+    "packages/client/node_modules/@opentui/core-darwin-arm64": {
+      "version": "0.5.10",
+      "resolved": "https://registry.npmjs.org/@opentui/core-darwin-arm64/-/core-darwin-arm64-0.5.10.tgz",
+      "integrity": "sha512-Vyb+nTbhab8ZcRy5gg1loEEGwRcIbjAeVRIBfHBcbFDqmITBOg7x2gqJ+x/TnoOy4uwMhCmICUN2wiyREw3r1Q==",
+      "cpu": [
+        "arm64"
+      ],
+      "dev": true,
+      "license": "MIT",
+      "optional": true,
+      "os": [
+        "darwin"
+      ]
+    },
+    "packages/client/node_modules/@opentui/core-darwin-x64": {
+      "version": "0.5.10",
+      "resolved": "https://registry.npmjs.org/@opentui/core-darwin-x64/-/core-darwin-x64-0.5.10.tgz",
+      "integrity": "sha512-tTFLcM7Oj1gTyhm/bUdAt3C6grZdCxPk6+/g2azcZBUlI3/62LwbeRS6HbQKFFmm+1fUmX8cq6kWrtul885mVg==",
+      "cpu": [
+        "x64"
+      ],
+      "dev": true,
+      "license": "MIT",
+      "optional": true,
+      "os": [
+        "darwin"
+      ]
+    },
+    "packages/client/node_modules/@opentui/core-linux-arm64": {
+      "version": "0.5.10",
+      "resolved": "https://registry.npmjs.org/@opentui/core-linux-arm64/-/core-linux-arm64-0.5.10.tgz",
+      "integrity": "sha512-ncJXcgudhBf2GdJyF3xVQN/Ec+1F7GOL+pRrURmgBYSj2v1w6EyoDQFAACtPTK2c3R38W6fvZwL4JSLlm4EFXQ==",
+      "cpu": [
+        "arm64"
+      ],
+      "dev": true,
+      "license": "MIT",
+      "optional": true,
+      "os": [
+        "linux"
+      ]
+    },
+    "packages/client/node_modules/@opentui/core-linux-arm64-musl": {
+      "version": "0.5.10",
+      "resolved": "https://registry.npmjs.org/@opentui/core-linux-arm64-musl/-/core-linux-arm64-musl-0.5.10.tgz",
+      "integrity": "sha512-dGMphDKexSdeYqwl0wgoFBP88Ta/cdi1Zc1mk29/ENkSCGz+74zlCHgqTHRNGLmI8W5TfuUtCyktQH11/Z+TBQ==",
+      "cpu": [
+        "arm64"
+      ],
+      "dev": true,
+      "libc": [
+        "musl"
+      ],
+      "license": "MIT",
+      "optional": true,
+      "os": [
+        "linux"
+      ]
+    },
+    "packages/client/node_modules/@opentui/core-linux-x64": {
+      "version": "0.5.10",
+      "resolved": "https://registry.npmjs.org/@opentui/core-linux-x64/-/core-linux-x64-0.5.10.tgz",
+      "integrity": "sha512-5qtYaOgwVycZD1GaGshTRsi0rXPAmVExO03N1JQaHu+NYxK/vXSOc7Bu4QW0sPXx3Sp0SpzpP+FHjXABfoK66g==",
+      "cpu": [
+        "x64"
+      ],
+      "dev": true,
+      "license": "MIT",
+      "optional": true,
+      "os": [
+        "linux"
+      ]
+    },
+    "packages/client/node_modules/@opentui/core-linux-x64-musl": {
+      "version": "0.5.10",
+      "resolved": "https://registry.npmjs.org/@opentui/core-linux-x64-musl/-/core-linux-x64-musl-0.5.10.tgz",
+      "integrity": "sha512-Oj4H9hApuvuTKPWxh4SoZAgGJorR7vbvnrZA/cAkSMAk2VGSoHRRcqeXQbcH8IcdjVZ0KFpv8Zkl/D5Ye+2mew==",
+      "cpu": [
+        "x64"
+      ],
+      "dev": true,
+      "libc": [
+        "musl"
+      ],
+      "license": "MIT",
+      "optional": true,
+      "os": [
+        "linux"
+      ]
+    },
+    "packages/client/node_modules/@opentui/core-win32-arm64": {
+      "version": "0.5.10",
+      "resolved": "https://registry.npmjs.org/@opentui/core-win32-arm64/-/core-win32-arm64-0.5.10.tgz",
+      "integrity": "sha512-A9VhgvTxQoUdZ+8LmUumEng1sQNbj9QQQT3NYG9mSxI54qTANi7vOWNSphMiY6RMVsr22pgm6nUvSSvJXv7Jog==",
+      "cpu": [
+        "arm64"
+      ],
+      "dev": true,
+      "license": "MIT",
+      "optional": true,
+      "os": [
+        "win32"
+      ]
+    },
+    "packages/client/node_modules/@opentui/core-win32-x64": {
+      "version": "0.5.10",
+      "resolved": "https://registry.npmjs.org/@opentui/core-win32-x64/-/core-win32-x64-0.5.10.tgz",
+      "integrity": "sha512-u3KHa7kEeWrmKVDRJYpxSGO+g5E9cMGlrmTsPN3GVPHUmQMiREUawLXUvsU8+IHaQnqG3Q5nuE1yf4fPBzS+Qw==",
+      "cpu": [
+        "x64"
+      ],
+      "dev": true,
+      "license": "MIT",
+      "optional": true,
+      "os": [
+        "win32"
+      ]
+    },
+    "packages/client/node_modules/diff": {
+      "version": "9.0.0",
+      "resolved": "https://registry.npmjs.org/diff/-/diff-9.0.0.tgz",
+      "integrity": "sha512-svtcdpS8CgJyqAjEQIXdb3OjhFVVYjzGAPO8WGCmRbrml64SPw/jJD4GoE98aR7r25A0XcgrK3F02yw9R/vhQw==",
+      "dev": true,
+      "license": "BSD-3-Clause",
+      "engines": {
+        "node": ">=0.3.1"
+      }
+    },
+    "packages/client/node_modules/marked": {
+      "version": "17.0.1",
+      "resolved": "https://registry.npmjs.org/marked/-/marked-17.0.1.tgz",
+      "integrity": "sha512-boeBdiS0ghpWcSwoNm/jJBwdpFaMnZWRzjA6SkUMYb40SVaN1x7mmfGKp0jvexGcx+7y2La5zRZsYFZI6Qpypg==",
+      "dev": true,
+      "license": "MIT",
+      "bin": {
+        "marked": "bin/marked.js"
+      },
+      "engines": {
+        "node": ">= 20"
       }
     },
     "packages/harness": {
@@ -5780,92 +5948,6 @@
         "@mariozechner/clipboard": "0.3.9"
       }
     },
-    "packages/harness/node_modules/@vitest/expect": {
-      "version": "4.1.9",
-      "resolved": "https://registry.npmjs.org/@vitest/expect/-/expect-4.1.9.tgz",
-      "integrity": "sha512-vl/rYsUKcBr3SnQn166+XR5ZQcgMx3DQhFWdfli/cWpLnLUmbxZvyrJZotLFUryib+LtArYMSTJ5RbQ57ZqrlA==",
-      "dev": true,
-      "license": "MIT",
-      "dependencies": {
-        "@standard-schema/spec": "^1.1.0",
-        "@types/chai": "^5.2.2",
-        "@vitest/spy": "4.1.9",
-        "@vitest/utils": "4.1.9",
-        "chai": "^6.2.2",
-        "tinyrainbow": "^3.1.0"
-      },
-      "funding": {
-        "url": "https://opencollective.com/vitest"
-      }
-    },
-    "packages/harness/node_modules/@vitest/pretty-format": {
-      "version": "4.1.9",
-      "resolved": "https://registry.npmjs.org/@vitest/pretty-format/-/pretty-format-4.1.9.tgz",
-      "integrity": "sha512-s0iufns3iIFitdgm+YR7g1whCAaGtXz459VS9/PqyKDEEFgYIhsHOQmXgIgDuYCt7DeQmiZT0Qe2OA2p4ZPu5A==",
-      "dev": true,
-      "license": "MIT",
-      "dependencies": {
-        "tinyrainbow": "^3.1.0"
-      },
-      "funding": {
-        "url": "https://opencollective.com/vitest"
-      }
-    },
-    "packages/harness/node_modules/@vitest/runner": {
-      "version": "4.1.9",
-      "resolved": "https://registry.npmjs.org/@vitest/runner/-/runner-4.1.9.tgz",
-      "integrity": "sha512-KXLMDtc7oe70+3mJfGrPUWPesswH+3sTxAMAMl8DG7I8IUQT4XW718dY5ID3vPUcmlu27CcKfY4P3h3I29SLJg==",
-      "dev": true,
-      "license": "MIT",
-      "dependencies": {
-        "@vitest/utils": "4.1.9",
-        "pathe": "^2.0.3"
-      },
-      "funding": {
-        "url": "https://opencollective.com/vitest"
-      }
-    },
-    "packages/harness/node_modules/@vitest/snapshot": {
-      "version": "4.1.9",
-      "resolved": "https://registry.npmjs.org/@vitest/snapshot/-/snapshot-4.1.9.tgz",
-      "integrity": "sha512-Jc7RKGNBo8Z28WYIm0Niej4xdSPByRf6mU58VpHQkd6Zh05rlnA+twjbK5HyeIGHxrzsc3mJgS43uM0CZKzaIA==",
-      "dev": true,
-      "license": "MIT",
-      "dependencies": {
-        "@vitest/pretty-format": "4.1.9",
-        "@vitest/utils": "4.1.9",
-        "magic-string": "^0.30.21",
-        "pathe": "^2.0.3"
-      },
-      "funding": {
-        "url": "https://opencollective.com/vitest"
-      }
-    },
-    "packages/harness/node_modules/@vitest/spy": {
-      "version": "4.1.9",
-      "resolved": "https://registry.npmjs.org/@vitest/spy/-/spy-4.1.9.tgz",
-      "integrity": "sha512-fHpsS6mIi+PiEW+vcRVOMkX1oSaPKne3VOclSFICPcGOmfKgXPU5iAah+wcNcj2xPrCCmfq99IDGf+EojhhvhA==",
-      "dev": true,
-      "license": "MIT",
-      "funding": {
-        "url": "https://opencollective.com/vitest"
-      }
-    },
-    "packages/harness/node_modules/@vitest/utils": {
-      "version": "4.1.9",
-      "resolved": "https://registry.npmjs.org/@vitest/utils/-/utils-4.1.9.tgz",
-      "integrity": "sha512-A51o8ymO5PpqlWNnBP9ZHPXDIpuMtTLlGSjN7la4US+LJzoUMyhwjA5QXlm39JexgwHKW4Xjs8Z2d3dLCXOeuA==",
-      "dev": true,
-      "license": "MIT",
-      "dependencies": {
-        "@vitest/pretty-format": "4.1.9",
-        "convert-source-map": "^2.0.0",
-        "tinyrainbow": "^3.1.0"
-      },
-      "funding": {
-        "url": "https://opencollective.com/vitest"
-      }
-    },
     "packages/harness/node_modules/grok-mermaid": {
       "version": "0.2.2",
       "resolved": "https://registry.npmjs.org/grok-mermaid/-/grok-mermaid-0.2.2.tgz",
@@ -5882,123 +5964,6 @@
       "license": "MIT",
       "engines": {
         "node": ">= 4"
-      }
-    },
-    "packages/harness/node_modules/vitest": {
-      "version": "4.1.9",
-      "resolved": "https://registry.npmjs.org/vitest/-/vitest-4.1.9.tgz",
-      "integrity": "sha512-nE3/LEyc0z87uHYLZebqCUOaJr2hdtuPp7BQ4BosVFnfltxgAvMG08NyrSGlPpOUWvR27c5flSmYFTNr78L9GQ==",
-      "dev": true,
-      "license": "MIT",
-      "dependencies": {
-        "@vitest/expect": "4.1.9",
-        "@vitest/mocker": "4.1.9",
-        "@vitest/pretty-format": "4.1.9",
-        "@vitest/runner": "4.1.9",
-        "@vitest/snapshot": "4.1.9",
-        "@vitest/spy": "4.1.9",
-        "@vitest/utils": "4.1.9",
-        "es-module-lexer": "^2.0.0",
-        "expect-type": "^1.3.0",
-        "magic-string": "^0.30.21",
-        "obug": "^2.1.1",
-        "pathe": "^2.0.3",
-        "picomatch": "^4.0.3",
-        "std-env": "^4.0.0-rc.1",
-        "tinybench": "^2.9.0",
-        "tinyexec": "^1.0.2",
-        "tinyglobby": "^0.2.15",
-        "tinyrainbow": "^3.1.0",
-        "vite": "^6.0.0 || ^7.0.0 || ^8.0.0",
-        "why-is-node-running": "^2.3.0"
-      },
-      "bin": {
-        "vitest": "vitest.mjs"
-      },
-      "engines": {
-        "node": "^20.0.0 || ^22.0.0 || >=24.0.0"
-      },
-      "funding": {
-        "url": "https://opencollective.com/vitest"
-      },
-      "peerDependencies": {
-        "@edge-runtime/vm": "*",
-        "@opentelemetry/api": "^1.9.0",
-        "@types/node": "^20.0.0 || ^22.0.0 || >=24.0.0",
-        "@vitest/browser-playwright": "4.1.9",
-        "@vitest/browser-preview": "4.1.9",
-        "@vitest/browser-webdriverio": "4.1.9",
-        "@vitest/coverage-istanbul": "4.1.9",
-        "@vitest/coverage-v8": "4.1.9",
-        "@vitest/ui": "4.1.9",
-        "happy-dom": "*",
-        "jsdom": "*",
-        "vite": "^6.0.0 || ^7.0.0 || ^8.0.0"
-      },
-      "peerDependenciesMeta": {
-        "@edge-runtime/vm": {
-          "optional": true
-        },
-        "@opentelemetry/api": {
-          "optional": true
-        },
-        "@types/node": {
-          "optional": true
-        },
-        "@vitest/browser-playwright": {
-          "optional": true
-        },
-        "@vitest/browser-preview": {
-          "optional": true
-        },
-        "@vitest/browser-webdriverio": {
-          "optional": true
-        },
-        "@vitest/coverage-istanbul": {
-          "optional": true
-        },
-        "@vitest/coverage-v8": {
-          "optional": true
-        },
-        "@vitest/ui": {
-          "optional": true
-        },
-        "happy-dom": {
-          "optional": true
-        },
-        "jsdom": {
-          "optional": true
-        },
-        "vite": {
-          "optional": false
-        }
-      }
-    },
-    "packages/harness/node_modules/vitest/node_modules/@vitest/mocker": {
-      "version": "4.1.9",
-      "resolved": "https://registry.npmjs.org/@vitest/mocker/-/mocker-4.1.9.tgz",
-      "integrity": "sha512-EVkXzBjrPGM+cK8/ANWgBrkUCfJfb38/EfTSO8h7pWvKkyPkpWxvR7BkD2MyItMF62C97zAEoqdpUixwR/e+Rw==",
-      "dev": true,
-      "license": "MIT",
-      "dependencies": {
-        "@vitest/spy": "4.1.9",
-        "estree-walker": "^3.0.3",
-        "magic-string": "^0.30.21"
-      },
-      "funding": {
-        "url": "https://opencollective.com/vitest"
-      },
-      "peerDependencies": {
-        "msw": "^2.4.9",
-        "vite": "^6.0.0 || ^7.0.0 || ^8.0.0"
-      },
-      "peerDependenciesMeta": {
-        "msw": {
-          "optional": true
-        },
-        "vite": {
-          "optional": true
-        }
       }
     }
   }
